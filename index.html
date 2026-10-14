@@ -181,7 +181,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
-  /* ส่วนประกอบรูปแบบหน้าจอที่ Index.html เรียกใช้ */
+  /* ส่วนประกอบรูปแบบหน้าจอ: Stylesheet.html — โหลดใน head ของ Index.html */
   :root {
     --accent: #6d5dfc;
     --accent-2: #4f7cff;
@@ -782,7 +782,8 @@
   </div>
   <datalist id="names-list"></datalist>
 
-  <!-- โหลดส่วนประกอบหลังสร้างหน้าจอครบ โดยให้สคริปต์หลักมาก่อนระบบหลายวง -->
+  <!-- ส่วนประกอบถูกบันทึกก่อนหน้านี้แล้ว: JavaScript.html, MultiClient.html, BulkClient.html -->
+  <!-- โหลดตามลำดับ และเริ่มระบบเมื่อ DOMContentLoaded -->
   <script>
 'use strict';
 
@@ -2862,12 +2863,18 @@ function init() {
   setInterval(tick, 30000);
 }
 
-init();
+// เริ่มทำงานหลังโหลดสคริปต์ส่วนประกอบครบทุกไฟล์
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init, { once: true });
+} else {
+  init();
+}
 </script>
 
   <script>
 'use strict';
-// ส่วนประกอบหลายวง โหลดหลัง JavaScript.html เพื่อใช้สถานะและตัวช่วยร่วมกัน
+// MultiClient.html: โหลดหลัง JavaScript.html และก่อน BulkClient.html
+// เริ่มโหลดข้อมูลเมื่อ DOMContentLoaded เพื่อให้ส่วนประกอบทั้งหมดพร้อมใช้งาน
 function multiError(e){showError(e.message||String(e));}
 function multiLocalKey(id){return id==='legacy'?'share-book-me-v1':'share-book-me-v1-'+id;}
 function renderMulti(){
@@ -2887,7 +2894,7 @@ function renderMulti(){
  }).join('')}</div>`:emptyHtml('fa-users','ยังไม่มีสมาชิก','เพิ่มทะเบียนสมาชิกเพื่อบันทึกข้อมูลทุกคน'));
  renderPaymentList();
 }
-function renderPaymentList(){
+function renderPaymentListLegacy(){
  if(!S.data)return;
  const d=S.data,el=$('#page-payments');
  const n=S.paymentRound||((S.M.next&&S.M.next.round)||1);
@@ -2980,5 +2987,75 @@ function updateKeeperLabels(){
 }
 setInterval(updateKeeperLabels,1000);
 </script>
+  <script>
+'use strict';
+// BulkClient.html: หน้าจ่ายหลายคน ใช้ตัวช่วยจาก JavaScript.html และ MultiClient.html
+let bulkRows=[];
+function renderPaymentList(){
+ if(!S.data)return;
+ const d=S.data;
+ if(!d.rounds.length){$('#page-payments').innerHTML=emptyHtml('fa-calendar','ยังไม่มีงวด','ตั้งค่าวงแชร์ก่อนบันทึกการจ่าย');return;}
+ const n=S.paymentRound||((S.M.next&&S.M.next.round)||1);
+ S.paymentRound=Math.min(n,d.settings.totalHands);
+ bulkRows=((d.ledger&&d.ledger.rows)||[]).filter(r=>r.round===S.paymentRound);
+ const groups={};
+ bulkRows.forEach(r=>{if(!groups[r.memberId])groups[r.memberId]=[];groups[r.memberId].push(r);});
+ const controls=S.isAdmin?`<div class="card p-4 mb-4 space-y-3"><div class="grid sm:grid-cols-2 gap-3"><div><label class="label" for="bulk-date">วันที่จ่าย</label><input id="bulk-date" type="date" class="field" value="${esc(todayBkk())}"></div><div><label class="label" for="bulk-common">ยอดเดียวกันต่อมือที่เลือก</label><div class="flex gap-2"><input id="bulk-common" type="number" min="0" step="0.01" class="field" placeholder="บาท" inputmode="decimal"><button type="button" id="bulk-apply" class="btn-ghost shrink-0">ใช้ยอดนี้</button></div></div></div><div class="flex gap-2 flex-wrap"><button type="button" id="bulk-all" class="chip">เลือกทั้งหมด</button><button type="button" id="bulk-none" class="chip">ยกเลิกเลือก</button><button type="button" id="bulk-due" class="chip"><i class="fa-solid fa-wand-magic-sparkles"></i> เติมยอดที่ต้องจ่าย</button></div><p class="text-xs muted">ยอดที่กรอกคือยอดจ่ายรวมของมือนั้นในงวดนี้ ไม่ใช่ยอดเพิ่ม บันทึกทับยอดเดิม · “ใช้ยอดนี้” ใช้ต่อมือ ไม่ใช่ยอดรวมต่อคน</p><p id="bulk-error" class="err" role="alert"></p></div>`:'';
+ $('#page-payments').innerHTML=`<div class="card p-4 mb-4"><label for="pay-round" class="label">จ่ายเงินงวดไหน?</label><select id="pay-round" class="field">${d.rounds.map(r=>`<option value="${r.round}" ${r.round===S.paymentRound?'selected':''}>งวด ${r.round} · ${thDate(r.date)}</option>`).join('')}</select></div>`+controls+
+ (bulkRows.length?`<div class="space-y-3">${Object.keys(groups).map(id=>{
+ const rows=groups[id];
+ return `<div class="card p-4"><div class="flex items-center gap-3 mb-3">${S.isAdmin?`<input type="checkbox" class="w-6 h-6 accent-violet-600" data-bulk-person="${esc(id)}" aria-label="เลือกทุกมือของ ${esc(rows[0].name)}">`:''}<h3 class="font-bold text-lg">${esc(rows[0].name)}</h3><span class="muted text-sm ml-auto">${rows.length} มือ</span></div>${rows.map(r=>`<div class="flex items-center gap-3 py-3 border-t row-line">${S.isAdmin?`<input type="checkbox" class="w-6 h-6 shrink-0 accent-violet-600" data-bulk-check="${esc(r.handId)}" data-person="${esc(id)}" aria-label="เลือกมือ ${r.index} ของ ${esc(r.name)}">`:''}<div class="flex-1 min-w-0"><b>มือ ${r.index}</b><p class="text-xs muted">ต้องจ่าย ${money(r.due)} · เดิม ${money(r.paid)}</p><p class="text-xs muted">${esc(r.date)} · ${esc(r.status)}</p></div>${S.isAdmin?`<div class="w-32 shrink-0"><label class="sr-only" for="amount-${esc(r.handId)}">ยอดจ่ายมือ ${r.index}</label><input id="amount-${esc(r.handId)}" data-bulk-amount="${esc(r.handId)}" type="number" inputmode="decimal" min="0" step="0.01" class="field text-right" value="${r.paid}"></div>`:`<b>${money(r.paid)}</b>`}</div>`).join('')}</div>`;
+ }).join('')}</div>`:emptyHtml('fa-users','ยังไม่มีสมาชิก','เพิ่มสมาชิกที่หน้า “สมาชิกทุกคน” ก่อน'))+
+ (S.isAdmin&&bulkRows.length?'<div class="card p-4 mt-4 sticky bottom-24 md:bottom-3 z-10"><div id="bulk-summary" class="text-sm font-semibold mb-3" aria-live="polite">ยังไม่ได้เลือกคน</div><button type="button" id="bulk-save" class="btn-primary w-full" disabled><i class="fa-solid fa-floppy-disk"></i>บันทึกคนที่เลือกครั้งเดียว</button></div>':'');
+}
+function bulkSelected(){return $$('[data-bulk-check]:checked').map(el=>el.dataset.bulkCheck);}
+function bulkAmount(id){return document.getElementById('amount-'+id);}
+function bulkSync(){
+ const selected=bulkSelected();
+ const people=new Set(bulkRows.filter(r=>selected.includes(r.handId)).map(r=>r.memberId));
+ let total=0;selected.forEach(id=>{total+=Number(bulkAmount(id).value)||0;});
+ const summary=$('#bulk-summary');if(summary)summary.textContent=`เลือก ${people.size} คน · ${selected.length} มือ · ยอดรวม ${money(total)} บาท`;
+ const button=$('#bulk-save');if(button)button.disabled=!selected.length||S.saving;
+ $$('[data-bulk-person]').forEach(el=>{const children=$$('[data-bulk-check]').filter(x=>x.dataset.person===el.dataset.bulkPerson);const count=children.filter(x=>x.checked).length;el.checked=count===children.length;el.indeterminate=count>0&&count<children.length;});
+}
+function bulkInline(message,field){const error=$('#bulk-error');if(error)error.textContent=message;if(field)field.focus();}
+async function bulkSave(){
+ if(S.saving)return;
+ const selected=bulkSelected();if(!selected.length)return;
+ const date=$('#bulk-date').value;
+ if(isNaN(parseYmd(date))){bulkInline('กรุณาเลือกวันที่จ่าย',$('#bulk-date'));return;}
+ const items=[];
+ for(const id of selected){const input=bulkAmount(id),paid=Number(input.value);if(input.value===''||!Number.isFinite(paid)||paid<0||paid>100000000){bulkInline('ยอดจ่ายต้องเป็นตัวเลข 0–100,000,000 บาท',input);return;}const row=bulkRows.find(r=>r.handId===id);items.push({handId:id,paid,note:row.note||''});}
+ const circleId=S.circleId,round=S.paymentRound,rev=S.data.rev;
+ const total=items.reduce((a,x)=>a+x.paid,0);
+ const people=new Set(bulkRows.filter(r=>selected.includes(r.handId)).map(r=>r.memberId));
+ if(!(await confirmBox('บันทึกการจ่ายพร้อมกัน?',`${people.size} คน · ${items.length} มือ · ${money(total)} บาท ยอดนี้จะบันทึกทับยอดเดิมของงวด ${round}`,'บันทึก')))return;
+ if(S.saving||S.loading||S.circleId!==circleId||S.paymentRound!==round||S.data.rev!==rev){showError('ข้อมูลเปลี่ยนระหว่างยืนยัน กรุณาตรวจรายการแล้วบันทึกใหม่');return;}
+ S.saving=true;
+ const button=$('#bulk-save');setBusy(button,true,'กำลังบันทึกหลายคน…');
+ const fields=$$('input,select,button');const previous=fields.map(el=>el.disabled);fields.forEach(el=>{el.disabled=true;});
+ try{
+ const res=await rpc('savePaymentsBulk',S.token,{circleId,round,rev,date,items});
+ if(handleWriteResult(res,'บันทึกไม่สำเร็จ'))toast('success',res.message||'บันทึกแล้ว');
+ }catch(e){showError(e.message||String(e));}
+ finally{S.saving=false;fields.forEach((el,i)=>{if(el.isConnected)el.disabled=previous[i];});setBusy(button,false);const sel=$('#circle-select');if(sel)sel.disabled=S.loading;bulkSync();}
+}
+document.addEventListener('change',e=>{
+ const el=e.target;
+ if(el.matches('[data-bulk-person]')){$$('[data-bulk-check]').filter(x=>x.dataset.person===el.dataset.bulkPerson).forEach(x=>{x.checked=el.checked;});bulkSync();}
+ if(el.matches('[data-bulk-check]'))bulkSync();
+});
+document.addEventListener('input',e=>{if(e.target.matches('[data-bulk-amount]')){const id=e.target.dataset.bulkAmount;const check=$$('[data-bulk-check]').find(x=>x.dataset.bulkCheck===id);if(check)check.checked=true;bulkSync();}});
+document.addEventListener('click',async e=>{
+ const b=e.target.closest('button');if(!b)return;
+ try{
+ if(b.id==='bulk-all'||b.id==='bulk-none'){$$('[data-bulk-check]').forEach(x=>{x.checked=b.id==='bulk-all';});bulkSync();}
+ if(b.id==='bulk-due'){const selected=bulkSelected();if(!selected.length){bulkInline('เลือกคนก่อน หรือกด “เลือกทั้งหมด”');return;}selected.forEach(id=>{const row=bulkRows.find(r=>r.handId===id);bulkAmount(id).value=row.due;});bulkSync();}
+ if(b.id==='bulk-apply'){const input=$('#bulk-common'),value=Number(input.value);if(input.value===''||!Number.isFinite(value)||value<0||value>100000000){bulkInline('กรอกยอดเงินที่ถูกต้อง',input);return;}const selected=bulkSelected();if(!selected.length){bulkInline('เลือกคนที่ต้องการใช้ยอดนี้ก่อน');return;}selected.forEach(id=>{bulkAmount(id).value=value;});bulkSync();}
+ if(b.id==='bulk-save')await bulkSave();
+ }catch(error){showError(error.message||String(error));}
+});
+</script>
+
 </body>
 </html>
