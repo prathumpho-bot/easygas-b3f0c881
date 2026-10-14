@@ -1,0 +1,2845 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<script data-egs-run-shim>
+(function () {
+  var EXEC_URL = "https://script.google.com/macros/s/AKfycbzwp4YiayeoYCM7ocNkyFmIKJg83hRW_QMTNrQXb5hzYHxuObHu5ZtZgf0BfWgDAd6Z/exec";
+  var MSG_NETWORK = '\u0e40\u0e0a\u0e37\u0e48\u0e2d\u0e21\u0e15\u0e48\u0e2d\u0e23\u0e30\u0e1a\u0e1a\u0e2b\u0e25\u0e31\u0e07\u0e1a\u0e49\u0e32\u0e19\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49 \u0e01\u0e23\u0e38\u0e13\u0e32\u0e15\u0e23\u0e27\u0e08\u0e2d\u0e34\u0e19\u0e40\u0e17\u0e2d\u0e23\u0e4c\u0e40\u0e19\u0e47\u0e15\u0e41\u0e25\u0e49\u0e27\u0e25\u0e2d\u0e07\u0e43\u0e2b\u0e21\u0e48';
+  var MSG_BAD_ANSWER = '\u0e23\u0e30\u0e1a\u0e1a\u0e2b\u0e25\u0e31\u0e07\u0e1a\u0e49\u0e32\u0e19\u0e15\u0e2d\u0e1a\u0e01\u0e25\u0e31\u0e1a\u0e1c\u0e34\u0e14\u0e23\u0e39\u0e1b\u0e41\u0e1a\u0e1a \u0e01\u0e23\u0e38\u0e13\u0e32\u0e25\u0e2d\u0e07\u0e43\u0e2b\u0e21\u0e48\u0e2d\u0e35\u0e01\u0e04\u0e23\u0e31\u0e49\u0e07';
+  var MSG_FILE = '\u0e2b\u0e19\u0e49\u0e32\u0e19\u0e35\u0e49\u0e22\u0e31\u0e07\u0e2a\u0e48\u0e07\u0e44\u0e1f\u0e25\u0e4c\u0e41\u0e19\u0e1a\u0e08\u0e32\u0e01\u0e1f\u0e2d\u0e23\u0e4c\u0e21\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49 \u0e01\u0e23\u0e38\u0e13\u0e32\u0e15\u0e31\u0e14\u0e0a\u0e48\u0e2d\u0e07\u0e41\u0e19\u0e1a\u0e44\u0e1f\u0e25\u0e4c\u0e2d\u0e2d\u0e01';
+  var MSG_ARGS = '\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e17\u0e35\u0e48\u0e2a\u0e48\u0e07\u0e44\u0e1b\u0e15\u0e49\u0e2d\u0e07\u0e40\u0e1b\u0e47\u0e19\u0e04\u0e48\u0e32\u0e17\u0e35\u0e48\u0e41\u0e1b\u0e25\u0e07\u0e40\u0e1b\u0e47\u0e19 JSON \u0e44\u0e14\u0e49';
+
+  function toError(name, message, cause) {
+    var err = new Error(message);
+    if (name) err.name = name;
+    if (cause !== undefined) err.cause = cause;
+    return err;
+  }
+
+  function addField(out, name, value) {
+    if (!(name in out)) { out[name] = value; return; }
+    if (!Array.isArray(out[name])) out[name] = [out[name]];
+    out[name].push(value);
+  }
+
+  function formToObject(form) {
+    var out = {};
+    var els = form.elements || [];
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var type = String(el.type || '').toLowerCase();
+      if (!el.name || el.disabled) continue;
+      if (type === 'file') {
+        if (el.files && el.files.length) throw toError('EgsFormError', MSG_FILE);
+        continue;
+      }
+      if (type === 'submit' || type === 'button' || type === 'reset' || type === 'image' || type === 'fieldset') continue;
+      if ((type === 'checkbox' || type === 'radio') && !el.checked) continue;
+      if (type === 'select-multiple') {
+        var opts = el.options || [];
+        for (var j = 0; j < opts.length; j++) if (opts[j].selected) addField(out, el.name, opts[j].value);
+        continue;
+      }
+      addField(out, el.name, el.value);
+    }
+    return out;
+  }
+
+  function isForm(v) {
+    return !!v && typeof v === 'object' && String(v.tagName || '').toUpperCase() === 'FORM';
+  }
+
+  function prepareArgs(args) {
+    if (args.length === 1 && isForm(args[0])) return [formToObject(args[0])];
+    return args;
+  }
+
+  function parseAnswer(text) {
+    var data;
+    try { data = JSON.parse(text); } catch (e) { throw toError('EgsRemoteError', MSG_BAD_ANSWER, e); }
+    if (!data || typeof data !== 'object' || typeof data.ok !== 'boolean') throw toError('EgsRemoteError', MSG_BAD_ANSWER);
+    return data;
+  }
+
+  function settle(state, value, err) {
+    if (err) {
+      if (state.fail) state.fail(err, state.user);
+      else console.error('google.script.run.' + state.fn + ' failed:', err);
+      return;
+    }
+    if (state.ok) state.ok(value, state.user);
+  }
+
+  function send(state, args) {
+    var body;
+    try {
+      body = JSON.stringify({ fn: state.fn, args: prepareArgs(args) });
+    } catch (e) {
+      var err = e && e.name === 'EgsFormError' ? e : toError('EgsArgsError', MSG_ARGS, e);
+      Promise.resolve().then(function () { settle(state, undefined, err); });
+      return;
+    }
+    fetch(EXEC_URL, { method: 'POST', body: body, redirect: 'follow' })
+      .then(function (res) { return res.text(); }, function (e) { throw toError('EgsNetworkError', MSG_NETWORK, e); })
+      .then(parseAnswer)
+      .then(function (data) { return { data: data }; }, function (e) { return { err: e }; })
+      .then(function (r) {
+        if (r.err) return settle(state, undefined, r.err);
+        if (r.data.ok) return settle(state, r.data.value, null);
+        var e = r.data.error || {};
+        settle(state, undefined, toError(e.name ? String(e.name) : 'Error', e.message !== undefined ? String(e.message) : 'Error'));
+      });
+  }
+
+  var SKIP = { then: 1, toJSON: 1, constructor: 1, valueOf: 1, toString: 1, inspect: 1 };
+
+  function makeRunner(state) {
+    return new Proxy({}, {
+      get: function (_, prop) {
+        if (typeof prop !== 'string' || SKIP[prop]) return undefined;
+        if (prop === 'withSuccessHandler') return function (h) { return makeRunner({ ok: h, fail: state.fail, user: state.user }); };
+        if (prop === 'withFailureHandler') return function (h) { return makeRunner({ ok: state.ok, fail: h, user: state.user }); };
+        if (prop === 'withUserObject') return function (u) { return makeRunner({ ok: state.ok, fail: state.fail, user: u }); };
+        return function () {
+          send({ ok: state.ok, fail: state.fail, user: state.user, fn: prop }, Array.prototype.slice.call(arguments));
+        };
+      }
+    });
+  }
+
+  function currentLocation() {
+    var params = new URLSearchParams(window.location.search);
+    var parameter = {}, parameters = {};
+    params.forEach(function (value, key) {
+      if (!(key in parameter)) parameter[key] = value;
+      (parameters[key] = parameters[key] || []).push(value);
+    });
+    return { hash: window.location.hash.replace(/^#/, ''), parameter: parameter, parameters: parameters };
+  }
+
+  function buildUrl(params, hash) {
+    var search = window.location.search;
+    if (params && typeof params === 'object') {
+      var q = new URLSearchParams();
+      Object.keys(params).forEach(function (k) {
+        var v = params[k];
+        if (Array.isArray(v)) v.forEach(function (x) { q.append(k, String(x)); });
+        else if (v !== undefined && v !== null) q.append(k, String(v));
+      });
+      var s = q.toString();
+      search = s ? '?' + s : '';
+    }
+    var h = hash === undefined || hash === null ? window.location.hash : (hash ? '#' + String(hash).replace(/^#/, '') : '');
+    return window.location.pathname + search + h;
+  }
+
+  var changeHandler = null;
+  window.addEventListener('popstate', function (ev) {
+    if (changeHandler) changeHandler({ state: ev.state, location: currentLocation() });
+  });
+
+  var noop = function () {};
+  window.google = {
+    script: {
+      run: makeRunner({ ok: null, fail: null, user: undefined }),
+      host: { close: noop, setHeight: noop, setWidth: noop, editor: { focus: noop }, origin: window.location.origin },
+      url: { getLocation: function (cb) { if (cb) cb(currentLocation()); } },
+      history: {
+        push: function (state, params, hash) { window.history.pushState(state === undefined ? null : state, '', buildUrl(params, hash)); },
+        replace: function (state, params, hash) { window.history.replaceState(state === undefined ? null : state, '', buildUrl(params, hash)); },
+        setChangeHandler: function (fn) { changeHandler = typeof fn === 'function' ? fn : null; }
+      }
+    }
+  };
+})();
+</script>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#6d5dfc">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236d5dfc'/%3E%3Ctext x='32' y='44' font-size='32' text-anchor='middle' fill='white' font-family='sans-serif'%3E%E0%B8%BF%3C/text%3E%3C/svg%3E">
+  <title>สมุดแชร์</title>
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem('share-book-theme'); } catch (e) {}
+      if (!t) t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+      if (t === 'dark') document.documentElement.classList.add('dark');
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style type="text/tailwindcss">
+    @custom-variant dark (&:where(.dark, .dark *));
+    @theme {
+      --font-sans: 'IBM Plex Sans Thai', ui-sans-serif, system-ui, sans-serif;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+  :root {
+    --accent: #6d5dfc;
+    --accent-2: #4f7cff;
+    --accent-soft: rgba(109, 93, 252, .12);
+    --gold: #f5a524;
+    --bg: #f4f3fb;
+    --card: rgba(255, 255, 255, .86);
+    --panel: #ffffff;
+    --card-border: rgba(255, 255, 255, .95);
+    --line: #e6e4f4;
+    --muted: #64748b;
+    --shadow: 0 10px 30px rgba(76, 60, 180, .08);
+  }
+  .dark {
+    --accent: #8b7dff;
+    --accent-2: #5b8cff;
+    --accent-soft: rgba(139, 125, 255, .16);
+    --bg: #0d0e1c;
+    --card: rgba(26, 27, 48, .82);
+    --panel: #17182c;
+    --card-border: rgba(255, 255, 255, .06);
+    --line: #2a2b46;
+    --muted: #94a3b8;
+    --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  }
+
+  [hidden] { display: none !important; }
+  /* โหมดท้าวแชร์ / สมาชิก */
+  body:not(.is-admin) [data-admin-only] { display: none !important; }
+  body.is-admin [data-member-only] { display: none !important; }
+  #btn-admin.on { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border-color: transparent; }
+  .mine-btn { width: 34px; height: 34px; border-radius: 12px; display: grid; place-items: center; border: 1px solid var(--line); color: var(--muted); transition: all .15s; flex-shrink: 0; }
+  .mine-btn[aria-pressed="true"] { background: rgba(245, 165, 36, .16); border-color: var(--gold); color: var(--gold); }
+  html, body { background: var(--bg); }
+  /* กันหน้าเลื่อนออกด้านข้างบนมือถือ (clip ไม่ทำให้ header แบบ sticky พัง) */
+  html, body { overflow-x: clip; max-width: 100%; }
+  select.field { min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+  .card, main section > div > div { min-width: 0; }
+  body {
+    font-family: 'IBM Plex Sans Thai', ui-sans-serif, system-ui, sans-serif;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color .25s, color .25s;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(40rem 30rem at 0% 0%, rgba(124, 108, 246, .16), transparent 60%),
+      radial-gradient(36rem 28rem at 100% 10%, rgba(79, 124, 255, .14), transparent 60%),
+      radial-gradient(30rem 24rem at 50% 100%, rgba(236, 72, 153, .07), transparent 60%);
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 24px;
+    box-shadow: var(--shadow);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+  .app-header {
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+  .side-panel {
+    background: var(--card);
+    border-right: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+  .bottom-bar {
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+  }
+  .row-line { border-color: var(--line); }
+  .muted { color: var(--muted); }
+
+  .icon-btn {
+    width: 42px; height: 42px;
+    border-radius: 14px;
+    display: grid; place-items: center;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    box-shadow: var(--shadow);
+    color: var(--muted);
+    transition: transform .15s, color .15s;
+    flex-shrink: 0;
+  }
+  .icon-btn:hover { color: var(--accent); }
+  .icon-btn:active { transform: scale(.94); }
+  .icon-btn.sm { width: 36px; height: 36px; border-radius: 12px; box-shadow: none; }
+
+  .nav-side { color: var(--muted); transition: background-color .15s, color .15s; }
+  .nav-side:hover { background: var(--accent-soft); }
+  .nav-side.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  .nav-bottom {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 6px 0 8px; font-size: 11px; color: var(--muted);
+  }
+  .nav-bottom i { font-size: 19px; }
+  .nav-bottom.active { color: var(--accent); font-weight: 600; }
+  .fab {
+    width: 58px; height: 58px; border-radius: 50%;
+    display: grid; place-items: center;
+    color: #fff; font-size: 22px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 10px 24px rgba(109, 93, 252, .45);
+    border: 4px solid var(--bg);
+    transition: transform .15s;
+  }
+  .fab:active { transform: scale(.93); }
+
+  .field {
+    width: 100%;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, .7);
+    padding: 11px 14px;
+    font-size: 16px;
+    color: inherit;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .dark .field { background: rgba(255, 255, 255, .04); color-scheme: dark; }
+  .field:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+  .field.invalid { border-color: #f43f5e; }
+  .field:disabled { opacity: .55; }
+  .err { color: #f43f5e; font-size: 13px; margin-top: 4px; }
+  .label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+
+  .btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #fff; border-radius: 16px; padding: 12px 18px; font-weight: 600;
+    box-shadow: 0 8px 20px rgba(109, 93, 252, .3);
+    transition: transform .15s, opacity .15s;
+  }
+  .btn-primary:active { transform: scale(.98); }
+  .btn-primary:disabled, .btn-ghost:disabled { opacity: .6; cursor: not-allowed; }
+  .btn-ghost {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    border: 1px solid var(--line); border-radius: 16px; padding: 12px 18px; font-weight: 500;
+    background: transparent; transition: background-color .15s;
+  }
+  .btn-ghost:hover { background: var(--accent-soft); }
+
+  .seg { display: inline-flex; background: var(--accent-soft); border-radius: 999px; padding: 4px; gap: 2px; }
+  .seg button { padding: 8px 16px; border-radius: 999px; font-weight: 500; color: var(--muted); transition: all .15s; }
+  .seg button.active { background: var(--panel); color: var(--accent); box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
+  .dark .seg button.active { background: var(--accent); color: #fff; }
+
+  .chip { padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip-gold { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(245, 165, 36, .16); color: #b7791f; }
+  .dark .chip-gold { color: #fbbf24; }
+  .tag-real { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; background: var(--accent-soft); color: var(--accent); }
+
+  /* timeline */
+  .tl { position: relative; padding-left: 34px; }
+  .tl::before {
+    content: ''; position: absolute; left: 12px; top: 8px; bottom: 8px; width: 3px; border-radius: 3px;
+    background: linear-gradient(var(--accent), var(--accent-2) 55%, var(--line));
+  }
+  .tl-item { position: relative; }
+  .tl-dot {
+    position: absolute; left: -31px; top: 20px; width: 20px; height: 20px; border-radius: 50%;
+    border: 4px solid var(--bg); background: var(--line); z-index: 1;
+  }
+  .tl-item.done .tl-dot { background: var(--accent); }
+  .tl-item.mine .tl-dot { background: var(--gold); }
+  .tl-item.late .tl-dot { background: #f59e0b; }
+  .tl-item.next .tl-dot { background: var(--accent-2); animation: pulse 1.8s infinite; }
+  .tl-item.future .card { opacity: .78; }
+  .next-glow { box-shadow: 0 0 0 2px var(--accent-2), 0 12px 30px rgba(79, 124, 255, .25) !important; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(79, 124, 255, .55); }
+    70% { box-shadow: 0 0 0 12px rgba(79, 124, 255, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(79, 124, 255, 0); }
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--line) 25%, color-mix(in srgb, var(--line) 45%, transparent) 50%, var(--line) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.3s infinite;
+    border-radius: 22px;
+  }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  .fade-in { animation: fadeIn .3s ease both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* modal */
+  .modal { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; }
+  .modal-backdrop { position: absolute; inset: 0; background: rgba(15, 14, 40, .45); opacity: 0; transition: opacity .2s; }
+  .modal-panel {
+    position: relative; width: 100%; max-width: 520px; max-height: 92vh; overflow: auto;
+    background: var(--panel); border-radius: 28px 28px 0 0;
+    transform: translateY(28px); opacity: 0; transition: transform .22s ease, opacity .22s ease;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  }
+  .modal.open .modal-backdrop { opacity: 1; }
+  .modal.open .modal-panel { transform: none; opacity: 1; }
+  @media (min-width: 768px) {
+    .modal { align-items: center; }
+    .modal-panel { border-radius: 28px; }
+  }
+
+  .bid-input { width: 104px; text-align: right; padding: 8px 10px; font-size: 15px; }
+  .bid-input.warn { border-color: #f43f5e; background: rgba(244, 63, 94, .07); }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+
+  .switch { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+  .switch input { position: absolute; inset: 0; opacity: 0; cursor: pointer; z-index: 1; }
+  .switch span { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background-color .2s; }
+  .switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0, 0, 0, .2); }
+  .switch input:checked + span { background: var(--gold); }
+  .switch input:checked + span::after { transform: translateX(20px); }
+  .switch input:focus-visible + span { box-shadow: 0 0 0 4px var(--accent-soft); }
+
+  /* SweetAlert2 dark */
+  .dark .swal2-popup { background: var(--panel); color: #e2e8f0; }
+  .dark .swal2-title, .dark .swal2-html-container { color: #e2e8f0; }
+  .dark .swal2-input { background: rgba(255, 255, 255, .05); color: #e2e8f0; border-color: var(--line); }
+  .swal2-popup { font-family: 'IBM Plex Sans Thai', sans-serif; border-radius: 22px; }
+
+  @media print {
+    aside, nav, header, .no-print { display: none !important; }
+    .md-shift { padding-left: 0 !important; }
+    body::before { display: none; }
+  }
+</style>
+
+</head>
+<body class="font-sans text-slate-800 dark:text-slate-100 min-h-screen antialiased">
+
+  <!-- Sidebar (tablet / desktop) -->
+  <aside class="side-panel hidden md:flex fixed inset-y-0 left-0 w-64 flex-col p-5 z-30">
+    <div class="flex items-center gap-3 px-2 mb-8">
+      <div class="w-11 h-11 rounded-2xl bg-linear-to-br from-violet-500 to-indigo-500 text-white grid place-items-center text-lg shadow-lg shadow-violet-500/30">
+        <i class="fa-solid fa-people-group"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="font-bold text-lg leading-tight truncate" data-bind="circle-name">สมุดแชร์</div>
+        <div class="text-xs muted truncate" data-bind="me-name">-</div>
+      </div>
+    </div>
+    <nav class="flex flex-col gap-1" aria-label="เมนูหลัก">
+      <button type="button" data-nav="home" class="nav-side flex items-center gap-3 px-4 py-3 rounded-2xl text-left"><i class="fa-solid fa-house w-5"></i>หน้าแรก</button>
+      <button type="button" data-nav="timeline" class="nav-side flex items-center gap-3 px-4 py-3 rounded-2xl text-left"><i class="fa-solid fa-timeline w-5"></i>ไทม์ไลน์</button>
+      <button type="button" data-nav="stats" class="nav-side flex items-center gap-3 px-4 py-3 rounded-2xl text-left"><i class="fa-solid fa-chart-column w-5"></i>สถิติ</button>
+      <button type="button" data-nav="sim" class="nav-side flex items-center gap-3 px-4 py-3 rounded-2xl text-left"><i class="fa-solid fa-calculator w-5"></i>จำลองกำไร/ขาดทุน</button>
+      <button type="button" data-nav="me" class="nav-side flex items-center gap-3 px-4 py-3 rounded-2xl text-left"><i class="fa-solid fa-user w-5"></i>ของฉัน</button>
+      <button type="button" data-nav="settings" data-admin-only class="nav-side flex items-center gap-3 px-4 py-3 rounded-2xl text-left"><i class="fa-solid fa-gear w-5"></i>ตั้งค่าวงแชร์</button>
+    </nav>
+    <button type="button" data-action="record" data-admin-only class="btn-primary mt-6"><i class="fa-solid fa-plus"></i>บันทึกงวด</button>
+    <div class="mt-auto text-xs muted px-2 leading-relaxed" id="side-role">โหมดสมาชิก · ดูข้อมูลได้อย่างเดียว</div>
+  </aside>
+
+  <div class="md:pl-64 md-shift">
+    <header class="app-header sticky top-0 z-20">
+      <div class="max-w-6xl mx-auto px-4 md:px-8 py-3 flex items-center gap-2">
+        <div class="flex-1 min-w-0">
+          <div class="text-xs muted truncate" id="hdr-greet">สวัสดี</div>
+          <h1 id="hdr-title" class="text-xl md:text-2xl font-bold truncate">หน้าแรก</h1>
+        </div>
+        <button type="button" id="btn-refresh" class="icon-btn" aria-label="โหลดข้อมูลใหม่" title="โหลดข้อมูลใหม่"><i class="fa-solid fa-rotate"></i></button>
+        <button type="button" id="btn-theme" class="icon-btn" aria-label="สลับโหมดมืด/สว่าง" title="สลับโหมดมืด/สว่าง"><i class="fa-solid fa-moon"></i></button>
+        <button type="button" id="btn-admin" class="icon-btn" aria-label="โหมดท้าวแชร์" title="โหมดท้าวแชร์"><i class="fa-solid fa-lock"></i></button>
+      </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 md:px-8 pt-2 pb-32 md:pb-12">
+
+      <!-- HOME -->
+      <section data-page="home" id="page-home" aria-live="polite">
+        <div class="skeleton h-44 mb-4"></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="skeleton h-32"></div><div class="skeleton h-32"></div><div class="skeleton h-32"></div><div class="skeleton h-32"></div>
+          <div class="skeleton h-32"></div><div class="skeleton h-32"></div><div class="skeleton h-32"></div><div class="skeleton h-32"></div>
+        </div>
+      </section>
+
+      <!-- TIMELINE -->
+      <section data-page="timeline" id="page-timeline" hidden></section>
+
+      <!-- STATS -->
+      <section data-page="stats" id="page-stats" hidden></section>
+
+      <!-- SIMULATION (ส่วนตัว เก็บในเครื่อง) -->
+      <section data-page="sim" id="page-sim" hidden>
+        <div id="sim-unconfigured" class="hidden"></div>
+        <div id="sim-body" class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+          <div class="lg:col-span-2 space-y-4">
+            <div class="card p-5">
+              <h2 class="font-bold flex items-center gap-2 mb-1"><span class="w-7 h-7 rounded-full bg-violet-500 text-white text-sm grid place-items-center">1</span>เลือกจำนวนมือ</h2>
+              <p class="text-sm muted mb-3">ลองถือ 1–4 มือได้ แล้วเลือกว่าแต่ละมือจะเปียงวดไหน</p>
+              <div class="seg mb-4" role="group" aria-label="จำนวนมือจำลอง">
+                <button type="button" data-sim-hands="1">1 มือ</button>
+                <button type="button" data-sim-hands="2">2 มือ</button>
+                <button type="button" data-sim-hands="3">3 มือ</button>
+                <button type="button" data-sim-hands="4">4 มือ</button>
+              </div>
+              <div id="sim-hand-rows" class="space-y-3"></div>
+            </div>
+
+            <div class="card p-5">
+              <h2 class="font-bold flex items-center gap-2 mb-1"><span class="w-7 h-7 rounded-full bg-violet-500 text-white text-sm grid place-items-center">2</span>ดอกงวดที่ผ่านมา</h2>
+              <div id="sim-real-info" class="text-sm muted"></div>
+            </div>
+
+            <div class="card p-5">
+              <h2 class="font-bold flex items-center gap-2 mb-1"><span class="w-7 h-7 rounded-full bg-violet-500 text-white text-sm grid place-items-center">3</span>กรอกดอกสมมติอัตโนมัติ</h2>
+              <p class="text-sm muted mb-3">ใช้กับงวดที่ยังไม่ถึงเท่านั้น</p>
+              <div class="grid grid-cols-3 gap-3">
+                <div><label class="label" for="fill-min">ต่ำสุด</label><input id="fill-min" type="number" inputmode="decimal" min="0" class="field"></div>
+                <div><label class="label" for="fill-max">สูงสุด</label><input id="fill-max" type="number" inputmode="decimal" min="0" class="field"></div>
+                <div><label class="label" for="fill-step">ห่างขั้นละ</label><input id="fill-step" type="number" inputmode="decimal" min="1" class="field"></div>
+              </div>
+              <div class="mt-3">
+                <label class="label" for="fill-pattern">รูปแบบ</label>
+                <select id="fill-pattern" class="field">
+                  <option value="desc">ไล่จากสูงไปต่ำ (ช่วงแรกดอกสูง)</option>
+                  <option value="asc">ไล่จากต่ำไปสูง</option>
+                  <option value="random">สุ่มในช่วง (ตามขั้น)</option>
+                  <option value="const">ค่าเดียวทุกงวด (ใช้ค่าต่ำสุด)</option>
+                </select>
+              </div>
+              <div id="fill-levels" class="text-xs muted mt-2"></div>
+              <div id="fill-error" class="err hidden"></div>
+              <button type="button" id="btn-autofill" class="btn-ghost w-full mt-4"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i>กรอกอัตโนมัติ</button>
+            </div>
+          </div>
+
+          <div class="lg:col-span-3 space-y-4">
+            <div class="card p-5">
+              <div class="flex items-center gap-2 mb-3 flex-wrap">
+                <h2 class="font-bold flex items-center gap-2 flex-1"><span class="w-7 h-7 rounded-full bg-violet-500 text-white text-sm grid place-items-center">4</span>ดอกรายงวด</h2>
+                <span id="sim-dirty" class="hidden text-xs px-3 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"><i class="fa-solid fa-circle-exclamation"></i> มีการแก้ไข กด "คำนวณใหม่"</span>
+              </div>
+              <div id="sim-table" class="max-h-[460px] overflow-auto -mx-2"></div>
+              <button type="button" id="btn-recalc" class="btn-primary w-full mt-4"><i class="fa-solid fa-calculator"></i>คำนวณใหม่</button>
+            </div>
+
+            <div class="card p-5" id="sim-result-card">
+              <h2 class="font-bold flex items-center gap-2 mb-3"><span class="w-7 h-7 rounded-full bg-violet-500 text-white text-sm grid place-items-center">5</span>ผลกำไร/ขาดทุน</h2>
+              <div id="sim-result"></div>
+            </div>
+
+            <div class="card p-5">
+              <div class="flex items-center gap-2 mb-1 flex-wrap">
+                <h2 class="font-bold flex-1"><i class="fa-solid fa-bookmark text-violet-500"></i> แผนของฉัน</h2>
+                <button type="button" id="btn-new-sim" class="btn-ghost !py-2 text-sm"><i class="fa-solid fa-rotate-left"></i>เริ่มใหม่</button>
+                <button type="button" id="btn-save-plan" class="btn-primary !py-2 text-sm"><i class="fa-solid fa-floppy-disk"></i>บันทึกแผน</button>
+              </div>
+              <p class="text-xs muted mb-2"><i class="fa-solid fa-mobile-screen"></i> แผนเก็บในเครื่องนี้เท่านั้น คนอื่นไม่เห็น</p>
+              <div id="plan-list"></div>
+              <div class="mt-5 pt-4 border-t row-line">
+                <h3 class="font-semibold mb-2"><i class="fa-solid fa-scale-balanced text-violet-500"></i> เปรียบเทียบ 2 แผน</h3>
+                <div class="grid grid-cols-2 gap-3">
+                  <select id="cmp-a" class="field min-w-0" aria-label="แผน A"></select>
+                  <select id="cmp-b" class="field min-w-0" aria-label="แผน B"></select>
+                </div>
+                <div id="cmp-result" class="mt-3"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ME (ข้อมูลส่วนตัว เก็บในเครื่อง) -->
+      <section data-page="me" id="page-me" hidden>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="card p-5 space-y-4">
+            <h2 class="font-bold text-lg flex items-center gap-2"><i class="fa-solid fa-user text-violet-500"></i>ฉันคือใครในวง</h2>
+            <p class="text-sm muted"><i class="fa-solid fa-mobile-screen"></i> ข้อมูลหน้านี้เก็บในเครื่องนี้เท่านั้น ไม่ส่งขึ้นระบบ คนอื่นไม่เห็น</p>
+            <div>
+              <label class="label" for="me-name">ชื่อของฉัน (ตามที่ท้าวแชร์ใช้บันทึก)</label>
+              <input id="me-name" class="field" maxlength="40" list="names-list" placeholder="เช่น พี่เอ">
+              <p class="text-xs muted mt-1">งวดที่ผู้ได้ชื่อตรงกับชื่อนี้ จะนับเป็นมือของคุณอัตโนมัติ</p>
+            </div>
+            <div>
+              <label class="label" for="me-hands">ฉันถือกี่มือ</label>
+              <input id="me-hands" type="number" inputmode="numeric" min="1" max="10" class="field">
+              <div class="err hidden" data-err-for="me-hands"></div>
+            </div>
+            <button type="button" id="btn-save-me" class="btn-primary w-full"><i class="fa-solid fa-floppy-disk"></i>บันทึกในเครื่องนี้</button>
+          </div>
+
+          <div class="space-y-4">
+            <div class="card p-5">
+              <h2 class="font-bold mb-2"><i class="fa-solid fa-crown text-amber-500"></i> งวดที่เป็นมือของฉัน</h2>
+              <div id="me-rounds"></div>
+              <p class="text-xs muted mt-2">ชื่อไม่ตรง? แตะไอคอนมงกุฎที่การ์ดงวดในหน้าไทม์ไลน์ เพื่อติ๊กว่าเป็นของคุณเอง</p>
+            </div>
+            <div class="card p-5">
+              <h2 class="font-bold mb-2"><i class="fa-solid fa-shield-halved text-violet-500"></i> สำรองข้อมูลส่วนตัว</h2>
+              <p class="text-sm muted mb-3">ล้างข้อมูลเบราว์เซอร์หรือเปลี่ยนเครื่องแล้วข้อมูลจะหาย คัดลอกรหัสสำรองเก็บไว้ แล้วนำเข้าในเครื่องใหม่ได้</p>
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" id="btn-export-me" class="btn-ghost"><i class="fa-solid fa-copy"></i>คัดลอกรหัสสำรอง</button>
+                <button type="button" id="btn-import-me" class="btn-ghost"><i class="fa-solid fa-file-import"></i>นำเข้า</button>
+              </div>
+              <button type="button" id="btn-clear-me" class="btn-ghost w-full mt-2 text-rose-500"><i class="fa-solid fa-trash"></i>ล้างข้อมูลส่วนตัวในเครื่องนี้</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SETTINGS (ท้าวแชร์เท่านั้น) -->
+      <section data-page="settings" id="page-settings" hidden>
+        <div id="settings-locked" class="hidden"></div>
+        <div id="settings-body">
+          <div id="settings-welcome" class="hidden card p-5 mb-4 border-l-4 !border-l-violet-500">
+            <div class="font-bold text-lg mb-1"><i class="fa-solid fa-hand-sparkles text-violet-500"></i> เริ่มต้นตั้งค่าวง</div>
+            <p class="text-sm muted">กรอกข้อมูลวงแชร์ เลือกวันเปียงวดแรกและความถี่ ระบบจะเรียงวันที่ทุกงวดให้ทันที ตรวจ/แก้วันที่ได้ตามต้องการ จากนั้นกด "บันทึกการตั้งค่า"</p>
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <form id="settings-form" class="card p-5 lg:col-span-2 space-y-4" novalidate>
+              <h2 class="font-bold text-lg flex items-center gap-2"><i class="fa-solid fa-sliders text-violet-500"></i>ข้อมูลวง</h2>
+              <div>
+                <label class="label" for="set-name">ชื่อวง</label>
+                <input id="set-name" class="field" maxlength="60" placeholder="เช่น วงแชร์ป้าแดง">
+                <div class="err hidden" data-err-for="set-name"></div>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="label" for="set-total">จำนวนมือรวม</label>
+                  <input id="set-total" type="number" inputmode="numeric" min="2" max="100" class="field">
+                  <div class="err hidden" data-err-for="set-total"></div>
+                </div>
+                <div>
+                  <label class="label" for="set-amount">เงินต่อมือ (บาท)</label>
+                  <input id="set-amount" type="number" inputmode="decimal" min="1" class="field">
+                  <div class="err hidden" data-err-for="set-amount"></div>
+                </div>
+                <div class="col-span-2">
+                  <label class="label" for="set-minbid">ดอกขั้นต่ำ (บาท)</label>
+                  <input id="set-minbid" type="number" inputmode="decimal" min="0" class="field">
+                  <div class="err hidden" data-err-for="set-minbid"></div>
+                </div>
+              </div>
+
+              <div class="pt-3 border-t row-line">
+                <h3 class="font-semibold mb-3"><i class="fa-solid fa-flag-checkered text-violet-500"></i> งวดแรก (มือแรก)</h3>
+                <label class="flex items-center gap-3 cursor-pointer">
+                  <span class="switch"><input type="checkbox" id="set-first-done" aria-label="งวดแรกเปียไปแล้ว"><span></span></span>
+                  <span class="text-sm font-semibold">งวดแรกเปียไปแล้ว</span>
+                </label>
+                <p id="first-off-hint" class="text-xs muted mt-2">ยังไม่เริ่มก็ปิดไว้ได้เลย พอถึงวันเปียงวดแรก ค่อยกดปุ่ม <i class="fa-solid fa-plus"></i> บันทึกเหมือนงวดอื่น</p>
+                <div id="first-fields" class="hidden mt-3">
+                  <label class="label" for="set-first-winner">ผู้ได้งวดแรก</label>
+                  <input id="set-first-winner" class="field" maxlength="40" list="names-list" placeholder="เช่น ท้าวแชร์">
+                  <div class="err hidden" data-err-for="set-first-winner"></div>
+                  <div class="mt-3">
+                    <label class="label" for="set-first-bid">ดอกงวดแรก (บาท)</label>
+                    <input id="set-first-bid" type="number" inputmode="decimal" min="0" class="field">
+                    <div class="err hidden" data-err-for="set-first-bid"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="pt-3 border-t row-line">
+                <h3 class="font-semibold mb-3"><i class="fa-solid fa-calendar-days text-violet-500"></i> วันเปีย</h3>
+                <div>
+                  <label class="label" for="set-start"><span class="inline-grid place-items-center w-5 h-5 rounded-full bg-violet-500 text-white text-[11px] mr-1">1</span>งวดแรกเปียวันที่</label>
+                  <input id="set-start" type="date" class="field">
+                  <div class="err hidden" data-err-for="set-start"></div>
+                  <p class="text-xs muted mt-1">เลือกวันที่จะเปียงวดที่ 1 (ยังไม่ถึงก็เลือกล่วงหน้าได้)</p>
+                </div>
+                <div class="mt-4">
+                  <span class="label"><span class="inline-grid place-items-center w-5 h-5 rounded-full bg-violet-500 text-white text-[11px] mr-1">2</span>งวดต่อไปเปียบ่อยแค่ไหน</span>
+                  <input type="hidden" id="set-freq" value="monthly">
+                  <div class="seg mb-3" role="group" aria-label="ความถี่">
+                    <button type="button" data-freq="monthly">เดือนละ 1 ครั้ง</button>
+                    <button type="button" data-freq="twice">เดือนละ 2 ครั้ง</button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="label" for="set-day1">ทุกวันที่</label>
+                      <input id="set-day1" type="number" inputmode="numeric" min="1" max="31" class="field">
+                      <div class="err hidden" data-err-for="set-day1"></div>
+                    </div>
+                    <div id="day2-wrap">
+                      <label class="label" for="set-day2">และวันที่</label>
+                      <input id="set-day2" type="number" inputmode="numeric" min="1" max="31" class="field">
+                      <div class="err hidden" data-err-for="set-day2"></div>
+                    </div>
+                  </div>
+                  <p class="text-xs muted mt-2">ถ้าวันที่ไม่มีในเดือนนั้น (เช่น 31) จะใช้วันสุดท้ายของเดือนแทน</p>
+                </div>
+                <div id="date-preview" class="mt-4 rounded-2xl p-3 text-sm bg-violet-50 dark:bg-violet-500/10 leading-relaxed"></div>
+                <div id="regen-box" class="hidden">
+                  <label class="flex items-center gap-2 text-sm mt-3 cursor-pointer">
+                    <input type="checkbox" id="keep-recorded" class="w-4 h-4 accent-violet-600" checked>
+                    คงวันที่ของงวดที่บันทึกผลแล้ว
+                  </label>
+                  <button type="button" id="btn-gen-dates" class="btn-ghost w-full mt-3"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i>คำนวณวันที่ทุกงวดใหม่</button>
+                  <p class="text-xs muted mt-2">วงเริ่มแล้ว ระบบจึงไม่เปลี่ยนวันที่ให้เอง กดปุ่มนี้ถ้าต้องการคำนวณใหม่ตามค่าด้านบน</p>
+                </div>
+              </div>
+            </form>
+
+            <div class="card p-5 lg:col-span-3 flex flex-col">
+              <div class="flex items-center gap-2 mb-1 flex-wrap">
+                <h2 class="font-bold text-lg flex-1"><i class="fa-solid fa-list-check text-violet-500"></i> ตรวจ/แก้วันที่ทุกงวด</h2>
+              </div>
+              <div id="draft-summary" class="text-sm muted mb-3"></div>
+              <div id="draft-list" class="max-h-[560px] overflow-auto -mx-2 px-2"></div>
+              <button type="button" id="btn-save-settings" class="btn-primary w-full mt-4"><i class="fa-solid fa-floppy-disk"></i>บันทึกการตั้งค่า</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Bottom bar (mobile) -->
+  <nav class="bottom-bar md:hidden fixed bottom-0 inset-x-0 z-30" aria-label="เมนูหลัก">
+    <div class="grid grid-cols-5 items-end max-w-lg mx-auto px-2 pt-1">
+      <button type="button" data-nav="home" class="nav-bottom"><i class="fa-solid fa-house"></i><span>หน้าแรก</span></button>
+      <button type="button" data-nav="timeline" class="nav-bottom"><i class="fa-solid fa-timeline"></i><span>ไทม์ไลน์</span></button>
+      <div class="flex justify-center">
+        <button type="button" data-action="record" data-admin-only class="fab -mt-7 mb-2" aria-label="บันทึกงวด"><i class="fa-solid fa-plus"></i></button>
+        <button type="button" data-nav="me" data-member-only class="fab -mt-7 mb-2" aria-label="ของฉัน"><i class="fa-solid fa-user"></i></button>
+      </div>
+      <button type="button" data-nav="stats" class="nav-bottom"><i class="fa-solid fa-chart-column"></i><span>สถิติ</span></button>
+      <button type="button" data-nav="sim" class="nav-bottom"><i class="fa-solid fa-calculator"></i><span>จำลอง</span></button>
+    </div>
+  </nav>
+
+  <!-- Round modal (ท้าวแชร์) -->
+  <div id="round-modal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="round-modal-title">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-panel p-5 md:p-6">
+      <div class="flex items-center gap-2 mb-4">
+        <h2 id="round-modal-title" class="text-lg font-bold flex-1"><i class="fa-solid fa-pen-to-square text-violet-500"></i> บันทึกงวด</h2>
+        <button type="button" class="icon-btn sm" data-close-modal aria-label="ปิด"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <form id="round-form" novalidate class="space-y-4">
+        <div>
+          <label class="label" for="m-round">งวด</label>
+          <select id="m-round" class="field"></select>
+        </div>
+        <div>
+          <label class="label" for="m-date">วันที่เปีย</label>
+          <input id="m-date" type="date" class="field">
+          <div class="err hidden" data-err-for="m-date"></div>
+          <label id="m-shift-wrap" class="hidden flex items-start gap-2 text-sm mt-2 cursor-pointer">
+            <input type="checkbox" id="m-shift" class="w-4 h-4 mt-0.5 accent-violet-600">
+            <span>เลื่อนวันที่ของงวดถัดไปทั้งหมดตามไปด้วย <span id="m-shift-days" class="muted"></span></span>
+          </label>
+        </div>
+        <div id="m-wait" class="hidden rounded-2xl p-4 text-sm bg-blue-50 text-blue-800 dark:bg-blue-500/10 dark:text-blue-200 leading-relaxed"></div>
+        <div id="m-result-fields" class="space-y-4">
+          <div>
+            <label class="label" for="m-winner">ชื่อผู้ได้ (ผู้เปีย)</label>
+            <input id="m-winner" class="field" maxlength="40" list="names-list" placeholder="เช่น พี่เอ">
+            <div class="err hidden" data-err-for="m-winner"></div>
+            <p class="text-xs muted mt-1">ใช้ชื่อเดิมทุกครั้งสำหรับคนเดียวกัน สมาชิกจะจับคู่มือของตัวเองจากชื่อนี้</p>
+          </div>
+          <div>
+            <label class="label" for="m-bid">ดอกที่ใส่ (บาท)</label>
+            <input id="m-bid" type="number" inputmode="decimal" min="0" class="field">
+            <div class="err hidden" data-err-for="m-bid"></div>
+            <div class="flex gap-2 mt-2 flex-wrap">
+              <button type="button" class="chip" data-bid-quick="min">ขั้นต่ำ</button>
+              <button type="button" class="chip" data-bid-quick="-10">−10</button>
+              <button type="button" class="chip" data-bid-quick="10">+10</button>
+              <button type="button" class="chip" data-bid-quick="50">+50</button>
+            </div>
+            <p class="text-xs muted mt-2" id="m-hint"></p>
+          </div>
+        </div>
+        <div class="flex flex-col-reverse sm:flex-row gap-2 pt-2">
+          <button type="button" id="btn-m-clear" class="btn-ghost text-rose-500 hidden"><i class="fa-solid fa-eraser"></i>ล้างผลงวดนี้</button>
+          <div class="flex-1"></div>
+          <button type="button" class="btn-ghost" data-close-modal>ยกเลิก</button>
+          <button type="submit" id="btn-m-save" class="btn-primary"><i class="fa-solid fa-check"></i>บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <datalist id="names-list"></datalist>
+
+  <script>
+'use strict';
+
+// ================================================================ state & constants
+const ME_KEY = 'share-book-me-v1';          // ข้อมูลส่วนตัว (ชื่อ, จำนวนมือ, แผนจำลอง) — อยู่ในเครื่องนี้เท่านั้น
+const TOKEN_KEY = 'share-book-admin-token'; // token โหมดท้าวแชร์ (ไม่ใช่ PIN)
+const MAX_LOCAL_PLANS = 30;
+
+const S = {
+  data: null,        // bundle จาก server (ข้อมูลกลางของวง)
+  M: null,           // ค่าที่คำนวณจาก data + ข้อมูลส่วนตัว
+  me: null,          // ข้อมูลส่วนตัวจาก localStorage
+  token: '',
+  isAdmin: false,
+  page: 'home',
+  charts: {},
+  sim: null,
+  lastLoad: 0,
+  lastToday: '',
+  loading: false,
+  saving: false,
+  tlView: 'timeline',
+  tlFilter: 'all',
+  draft: [],
+  settingsDirty: false,
+  modalRound: null,
+  modalTimer: null,
+  lastFocus: null
+};
+const PAGE_TITLES = { home: 'หน้าแรก', timeline: 'ไทม์ไลน์', stats: 'สถิติ', sim: 'จำลองกำไร/ขาดทุน', me: 'ของฉัน', settings: 'ตั้งค่าวงแชร์' };
+const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+const TH_DAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+const ACCENT = '#6d5dfc';
+
+// ================================================================ helpers
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+const pad = n => (n < 10 ? '0' : '') + n;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function money(n) { return (Number(n) || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 }); }
+function signed(n) { n = Number(n) || 0; return (n > 0 ? '+' : n < 0 ? '−' : '') + money(Math.abs(n)); }
+function plClass(n) { return n > 0 ? 'text-emerald-500' : n < 0 ? 'text-rose-500' : 'muted'; }
+function isDark() { return document.documentElement.classList.contains('dark'); }
+/** ต่อข้อความหลายท่อนด้วย " · " โดยแต่ละท่อนไม่ถูกตัดกลางคำ — จอเล็กจะขึ้นบรรทัดใหม่ทีละท่อน */
+function phrases(list) {
+  return list.map((t, i) => `<span class="inline-block whitespace-nowrap">${i ? '<span class="opacity-60 mx-1">·</span>' : ''}${esc(t)}</span>`).join('');
+}
+function normName(n) { return String(n || '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+function parseYmd(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN;
+}
+function ymdFromUtc(t) {
+  const d = new Date(t);
+  return d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate());
+}
+function ymd(y, m, d) { return y + '-' + pad(m) + '-' + pad(d); }
+function addDays(s, n) { return ymdFromUtc(parseYmd(s) + n * 86400000); }
+function daysBetween(a, b) { return Math.round((parseYmd(b) - parseYmd(a)) / 86400000); }
+function daysInMonth(y, m) { return new Date(Date.UTC(y, m, 0)).getUTCDate(); }
+function todayBkk() { return ymdFromUtc(Date.now() + 7 * 3600000); }
+function thDate(s, withDay) {
+  const t = parseYmd(s);
+  if (isNaN(t)) return '-';
+  const d = new Date(t);
+  return (withDay ? TH_DAYS[d.getUTCDay()] + ' ' : '') + d.getUTCDate() + ' ' + TH_MONTHS[d.getUTCMonth()] + ' ' + String(d.getUTCFullYear() + 543).slice(-2);
+}
+function countdown(s) {
+  const n = daysBetween(todayBkk(), s);
+  if (isNaN(n)) return { text: '-', late: false };
+  if (n > 1) return { text: 'อีก ' + n + ' วัน', late: false };
+  if (n === 1) return { text: 'พรุ่งนี้', late: false };
+  if (n === 0) return { text: 'วันนี้!', late: false };
+  return { text: 'เลยมา ' + (-n) + ' วัน', late: true };
+}
+
+// ================================================================ dialogs
+const Toast = window.Swal ? Swal.mixin({ toast: true, position: 'top-end', timer: 2500, showConfirmButton: false, timerProgressBar: true }) : null;
+function toast(icon, title) { if (Toast) Toast.fire({ icon, title }); }
+function showError(msg) {
+  if (window.Swal) Swal.fire({ icon: 'error', title: 'เกิดข้อผิดพลาด', text: msg || 'ลองใหม่อีกครั้ง', confirmButtonColor: ACCENT, confirmButtonText: 'ตกลง' });
+  else alert(msg);
+}
+async function confirmBox(title, text, confirmText, icon) {
+  if (!window.Swal) return confirm(title + '\n' + (text || ''));
+  const r = await Swal.fire({
+    title, text, icon: icon || 'question', showCancelButton: true,
+    confirmButtonText: confirmText || 'ยืนยัน', cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: ACCENT, reverseButtons: true
+  });
+  return r.isConfirmed;
+}
+function setBusy(btn, on, text) {
+  if (!btn) return;
+  if (on) {
+    btn.dataset.html = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>' + esc(text || 'กำลังบันทึก…');
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.html) btn.innerHTML = btn.dataset.html;
+  }
+}
+
+// ================================================================ ข้อมูลส่วนตัว (localStorage)
+function defaultMe() { return { name: '', hands: 1, overrides: {}, plans: [] }; }
+
+function sanitizeMe(o) {
+  o = o && typeof o === 'object' ? o : {};
+  const hands = parseInt(o.hands, 10);
+  const overrides = {};
+  if (o.overrides && typeof o.overrides === 'object') {
+    Object.keys(o.overrides).forEach(k => {
+      const n = parseInt(k, 10);
+      if (n >= 1 && n <= 100 && typeof o.overrides[k] === 'boolean') overrides[n] = o.overrides[k];
+    });
+  }
+  const plans = (Array.isArray(o.plans) ? o.plans : []).filter(p => p && p.id && p.data).slice(0, MAX_LOCAL_PLANS).map(p => ({
+    id: String(p.id).slice(0, 40), name: String(p.name || 'แผน').slice(0, 60),
+    createdAt: String(p.createdAt || ''), totalNet: Number(p.totalNet) || 0, data: p.data
+  }));
+  return { name: String(o.name || '').slice(0, 40), hands: hands >= 1 && hands <= 10 ? hands : 1, overrides, plans };
+}
+
+function loadMe() {
+  try { return sanitizeMe(JSON.parse(localStorage.getItem(ME_KEY) || '{}')); } catch (e) { return defaultMe(); }
+}
+function saveMe() {
+  try { localStorage.setItem(ME_KEY, JSON.stringify(S.me)); return true; }
+  catch (e) { showError('บันทึกในเครื่องไม่สำเร็จ เบราว์เซอร์อาจปิดการเก็บข้อมูล (เช่น โหมดไม่ระบุตัวตน)'); return false; }
+}
+
+/** งวดนี้เป็นมือของฉันไหม: ติ๊กเองมาก่อน ไม่งั้นดูจากชื่อผู้ได้ตรงกับชื่อของฉัน */
+function isMineRound(r) {
+  if (!r || !r.winner) return false;
+  const ov = S.me.overrides[r.round];
+  if (ov === true) return true;
+  if (ov === false) return false;
+  return !!S.me.name && normName(r.winner) === normName(S.me.name);
+}
+
+// ================================================================ server
+function rpc(name, ...args) {
+  return new Promise((resolve, reject) => {
+    if (!(window.google && google.script && google.script.run)) {
+      reject(new Error('หน้าพรีวิวดึงข้อมูลจริงไม่ได้ — กด "เผยแพร่" แล้วเปิดลิงก์ของแอป'));
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(err => reject(err instanceof Error ? err : new Error(String((err && err.message) || err))))[name](...args);
+  });
+}
+
+/** อ่านข้อมูลอย่างเดียว — ลองซ้ำได้เมื่อเน็ตสะดุดหรือระบบไม่ว่างชั่วคราว (ห้ามใช้กับการเขียน) */
+async function rpcRead(name, ...args) {
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await rpc(name, ...args);
+      if (res && !res.ok && /ลองใหม่/.test(res.message || '') && i < 2) { await sleep(800 * (i + 1)); continue; }
+      return res;
+    } catch (err) {
+      lastErr = err;
+      if (/พรีวิว/.test(err.message || '')) break;
+      if (i < 2) await sleep(800 * (i + 1));
+    }
+  }
+  throw lastErr || new Error('เชื่อมต่อระบบไม่สำเร็จ กรุณาลองใหม่');
+}
+
+/** ผลลัพธ์จากการเขียน: true = สำเร็จและอัปเดตหน้าจอแล้ว */
+function handleWriteResult(res, fallbackMsg) {
+  if (res && res.authExpired) {
+    dropAdmin();
+    Swal.fire({ icon: 'warning', title: 'ต้องใส่ PIN ใหม่', text: res.message, confirmButtonColor: ACCENT, confirmButtonText: 'ตกลง' });
+    return false;
+  }
+  if (res && res.conflict && res.bundle) {
+    S.settingsDirty = false;
+    applyBundle(res.bundle);
+    renderSettings(true);
+    Swal.fire({ icon: 'warning', title: 'ข้อมูลมีการเปลี่ยนแปลง', text: res.message, confirmButtonColor: ACCENT, confirmButtonText: 'ตกลง' });
+    return false;
+  }
+  if (!res || !res.ok) throw new Error((res && res.message) || fallbackMsg);
+  if (res.needReload) load(true);
+  else applyBundle(res);
+  return true;
+}
+
+async function load(silent) {
+  if (S.loading) return;
+  S.loading = true;
+  const rb = $('#btn-refresh');
+  if (rb) rb.querySelector('i').classList.add('fa-spin');
+  try {
+    const res = await rpcRead('getBundle', S.token || '');
+    if (!res || !res.ok) throw new Error((res && res.message) || 'โหลดข้อมูลไม่สำเร็จ');
+    if (S.token && !res.isAdmin) { setToken(''); if (!silent) toast('info', 'สิทธิ์ท้าวแชร์หมดอายุ ใส่ PIN ใหม่ได้ที่ปุ่มกุญแจ'); }
+    applyBundle(res);
+    if (!res.settings.configured && res.isAdmin && S.page !== 'settings') setPage('settings');
+  } catch (err) {
+    if (!S.data) renderLoadError(err.message || String(err));
+    if (!silent) showError(err.message || String(err));
+  } finally {
+    S.loading = false;
+    if (rb) rb.querySelector('i').classList.remove('fa-spin');
+  }
+}
+
+function applyBundle(res) {
+  const prev = S.data && S.data.settings;
+  S.data = res;
+  S.isAdmin = !!res.isAdmin;
+  S.lastLoad = Date.now();
+  S.lastToday = todayBkk();
+  S.M = derive();
+  if (res.settings.configured) {
+    const s = res.settings;
+    if (!S.sim || !prev || S.sim.N !== s.totalHands || S.sim.A !== s.handAmount || S.sim.minBid !== s.minBid) S.sim = newSim();
+    else refreshSimLocks();
+  } else {
+    S.sim = null;
+  }
+  renderAll();
+}
+
+/** ข้อมูลส่วนตัวเปลี่ยน → คำนวณใหม่เฉพาะฝั่งหน้าเว็บ ไม่ต้องเรียก server */
+function refreshPersonal() {
+  if (!S.data) return;
+  S.M = derive();
+  if (S.sim) refreshSimLocks();
+  renderAll();
+}
+
+// ================================================================ โหมดท้าวแชร์ (PIN)
+function setToken(t) {
+  S.token = t || '';
+  try { if (S.token) localStorage.setItem(TOKEN_KEY, S.token); else localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+}
+
+function dropAdmin() {
+  setToken('');
+  S.isAdmin = false;
+  if (S.data) S.data.isAdmin = false;
+  if (isModalOpen()) closeModal();
+  applyRole();
+  if (S.page === 'settings') renderSettings(true);
+}
+
+function applyRole() {
+  document.body.classList.toggle('is-admin', S.isAdmin);
+  const b = $('#btn-admin');
+  b.classList.toggle('on', S.isAdmin);
+  b.innerHTML = S.isAdmin ? '<i class="fa-solid fa-user-shield"></i>' : '<i class="fa-solid fa-lock"></i>';
+  b.setAttribute('aria-label', S.isAdmin ? 'เมนูท้าวแชร์' : 'เข้าโหมดท้าวแชร์');
+  $('#side-role').textContent = S.isAdmin ? 'โหมดท้าวแชร์ · แก้ไขข้อมูลวงได้' : 'โหมดสมาชิก · ดูข้อมูลได้อย่างเดียว';
+}
+
+async function adminButton() {
+  if (!S.data) { showError('ยังโหลดข้อมูลไม่เสร็จ ลองใหม่อีกครั้ง'); return; }
+  if (S.isAdmin) return adminMenu();
+  if (!S.data.adminSet) return setupPinFlow(true);
+  return loginFlow();
+}
+
+async function loginFlow() {
+  const r = await Swal.fire({
+    title: 'เข้าโหมดท้าวแชร์', icon: 'question',
+    html: '<p class="text-sm">ใส่ PIN เพื่อบันทึกผลงวดและแก้ไขข้อมูลวง</p><button type="button" id="forgot-pin" class="text-sm text-violet-600 underline mt-2">ลืม PIN?</button>',
+    input: 'password', inputAttributes: { inputmode: 'numeric', autocomplete: 'current-password', maxlength: 12, 'aria-label': 'PIN' },
+    showCancelButton: true, confirmButtonText: 'เข้าสู่ระบบ', cancelButtonText: 'ยกเลิก', confirmButtonColor: ACCENT,
+    showLoaderOnConfirm: true, allowOutsideClick: () => !Swal.isLoading(),
+    didOpen: () => { const f = document.getElementById('forgot-pin'); if (f) f.onclick = () => { Swal.close(); setupPinFlow(false); }; },
+    preConfirm: async pin => {
+      if (!pin) { Swal.showValidationMessage('กรุณาใส่ PIN'); return false; }
+      try {
+        const res = await rpc('adminLogin', pin);
+        if (!res || !res.ok) { Swal.showValidationMessage((res && res.message) || 'เข้าสู่ระบบไม่สำเร็จ'); return false; }
+        return res;
+      } catch (err) { Swal.showValidationMessage(err.message || String(err)); return false; }
+    }
+  });
+  if (r.isConfirmed && r.value) { setToken(r.value.token); toast('success', 'เข้าโหมดท้าวแชร์แล้ว'); await load(true); }
+}
+
+async function setupPinFlow(first) {
+  const r = await Swal.fire({
+    title: first ? 'ตั้ง PIN ท้าวแชร์ครั้งแรก' : 'รีเซ็ต PIN ท้าวแชร์', icon: 'info',
+    html: `<div class="text-left text-sm leading-relaxed">
+      <p class="mb-3">ใช้ <b>รหัสตั้งค่า</b> ที่อยู่ใน Google Sheet ของเจ้าของแอป: เปิด Google Drive → ไฟล์ <b>"สมุดแชร์ของฉัน Data"</b> → แท็บ <b>Admin</b> → คัดลอกรหัสในช่อง "ค่า"</p>
+      <label class="block font-semibold mb-1" for="sw-code">รหัสตั้งค่า</label>
+      <input id="sw-code" class="swal2-input !m-0 !w-full" autocomplete="off" maxlength="20" style="text-transform:uppercase">
+      <label class="block font-semibold mt-3 mb-1" for="sw-pin">PIN ใหม่ (ตัวเลข 4–12 หลัก)</label>
+      <input id="sw-pin" type="password" inputmode="numeric" autocomplete="new-password" class="swal2-input !m-0 !w-full" maxlength="12">
+      <label class="block font-semibold mt-3 mb-1" for="sw-pin2">ยืนยัน PIN</label>
+      <input id="sw-pin2" type="password" inputmode="numeric" autocomplete="new-password" class="swal2-input !m-0 !w-full" maxlength="12">
+    </div>`,
+    focusConfirm: false, showCancelButton: true, confirmButtonText: 'ตั้ง PIN', cancelButtonText: 'ยกเลิก', confirmButtonColor: ACCENT,
+    showLoaderOnConfirm: true, allowOutsideClick: () => !Swal.isLoading(),
+    preConfirm: async () => {
+      const code = $('#sw-code').value.trim(), pin = $('#sw-pin').value, pin2 = $('#sw-pin2').value;
+      if (!code) { Swal.showValidationMessage('กรุณาใส่รหัสตั้งค่า'); return false; }
+      if (!/^\d{4,12}$/.test(pin)) { Swal.showValidationMessage('PIN ต้องเป็นตัวเลข 4–12 หลัก'); return false; }
+      if (pin !== pin2) { Swal.showValidationMessage('PIN ทั้ง 2 ช่องไม่ตรงกัน'); return false; }
+      try {
+        const res = await rpc('setAdminPin', code, pin);
+        if (!res || !res.ok) { Swal.showValidationMessage((res && res.message) || 'ตั้ง PIN ไม่สำเร็จ'); return false; }
+        return res;
+      } catch (err) { Swal.showValidationMessage(err.message || String(err)); return false; }
+    }
+  });
+  if (r.isConfirmed && r.value) {
+    setToken(r.value.token);
+    await Swal.fire({ icon: 'success', title: 'ตั้ง PIN แล้ว', text: 'จำ PIN ไว้ใช้เข้าโหมดท้าวแชร์ รหัสตั้งค่าในชีตเปลี่ยนใหม่แล้ว', confirmButtonColor: ACCENT, confirmButtonText: 'ตกลง' });
+    await load(true);
+  }
+}
+
+async function adminMenu() {
+  const r = await Swal.fire({
+    title: 'โหมดท้าวแชร์', icon: 'info',
+    html: S.data.sheetUrl ? `<a href="${esc(S.data.sheetUrl)}" target="_blank" rel="noopener" class="text-sm text-violet-600 underline"><i class="fa-solid fa-table"></i> เปิด Google Sheet ที่เก็บข้อมูล</a>` : '',
+    showDenyButton: true, showCancelButton: true,
+    confirmButtonText: 'ออกจากโหมดท้าว', denyButtonText: 'เปลี่ยน PIN', cancelButtonText: 'ปิด',
+    confirmButtonColor: '#f43f5e', denyButtonColor: ACCENT
+  });
+  if (r.isConfirmed) return logoutFlow();
+  if (r.isDenied) return changePinFlow();
+}
+
+async function logoutFlow() {
+  const t = S.token;
+  dropAdmin();
+  renderAll();
+  try { await rpc('adminLogout', t); } catch (e) { console.warn('logout', e); }
+  toast('success', 'ออกจากโหมดท้าวแชร์แล้ว');
+}
+
+async function changePinFlow() {
+  const r = await Swal.fire({
+    title: 'เปลี่ยน PIN', icon: 'question',
+    html: `<div class="text-left text-sm">
+      <label class="block font-semibold mb-1" for="cp-cur">PIN ปัจจุบัน</label>
+      <input id="cp-cur" type="password" inputmode="numeric" autocomplete="current-password" class="swal2-input !m-0 !w-full" maxlength="12">
+      <label class="block font-semibold mt-3 mb-1" for="cp-new">PIN ใหม่ (ตัวเลข 4–12 หลัก)</label>
+      <input id="cp-new" type="password" inputmode="numeric" autocomplete="new-password" class="swal2-input !m-0 !w-full" maxlength="12">
+      <label class="block font-semibold mt-3 mb-1" for="cp-new2">ยืนยัน PIN ใหม่</label>
+      <input id="cp-new2" type="password" inputmode="numeric" autocomplete="new-password" class="swal2-input !m-0 !w-full" maxlength="12">
+    </div>`,
+    focusConfirm: false, showCancelButton: true, confirmButtonText: 'เปลี่ยน PIN', cancelButtonText: 'ยกเลิก', confirmButtonColor: ACCENT,
+    showLoaderOnConfirm: true, allowOutsideClick: () => !Swal.isLoading(),
+    preConfirm: async () => {
+      const cur = $('#cp-cur').value, pin = $('#cp-new').value, pin2 = $('#cp-new2').value;
+      if (!cur) { Swal.showValidationMessage('กรุณาใส่ PIN ปัจจุบัน'); return false; }
+      if (!/^\d{4,12}$/.test(pin)) { Swal.showValidationMessage('PIN ใหม่ต้องเป็นตัวเลข 4–12 หลัก'); return false; }
+      if (pin !== pin2) { Swal.showValidationMessage('PIN ใหม่ทั้ง 2 ช่องไม่ตรงกัน'); return false; }
+      try {
+        const res = await rpc('changeAdminPin', S.token, cur, pin);
+        if (res && res.authExpired) { Swal.showValidationMessage(res.message); return false; }
+        if (!res || !res.ok) { Swal.showValidationMessage((res && res.message) || 'เปลี่ยน PIN ไม่สำเร็จ'); return false; }
+        return res;
+      } catch (err) { Swal.showValidationMessage(err.message || String(err)); return false; }
+    }
+  });
+  if (r.isConfirmed && r.value) { setToken(r.value.token); toast('success', 'เปลี่ยน PIN แล้ว'); }
+}
+
+// ================================================================ calculation (แชร์ดอกตาม)
+/**
+ * bids[1..N] = ดอกของแต่ละงวด, handRounds = งวดที่มือของฉันแต่ละมือเปีย (null = ยังไม่กำหนด)
+ * มือเป็นจ่าย A, มือตายจ่าย A + ดอกของตัวเอง, ผู้เปียงวด r ได้ (N-1)×A + ดอกสะสมก่อนงวด r
+ */
+function calcPlan(N, A, bids, handRounds) {
+  let cumBid = 0, cum = 0, totalPaid = 0, totalReceive = 0;
+  const hands = handRounds.map((k, i) => ({ hand: i + 1, round: k || null, bid: k ? (Number(bids[k]) || 0) : 0, receive: 0, paid: 0, net: 0 }));
+  const rounds = [];
+  for (let r = 1; r <= N; r++) {
+    const pot = (N - 1) * A + cumBid;
+    let pay = 0, rec = 0;
+    hands.forEach(h => {
+      if (h.round === r) { h.receive = pot; rec += pot; }
+      else { const p = (h.round && h.round < r) ? A + h.bid : A; h.paid += p; pay += p; }
+    });
+    cum += rec - pay;
+    totalPaid += pay;
+    totalReceive += rec;
+    rounds.push({ round: r, bid: Number(bids[r]) || 0, pot, pay, receive: rec, net: rec - pay, cum });
+    cumBid += Number(bids[r]) || 0;
+  }
+  let total = 0;
+  hands.forEach(h => { h.net = h.receive - h.paid; total += h.net; });
+  return { hands, rounds, totalNet: total, totalPaid, totalReceive };
+}
+
+function derive() {
+  const d = S.data, s = d.settings, N = s.totalHands, A = s.handAmount;
+  const myHands = S.me.hands;
+  const rounds = d.rounds || [];
+  const byRound = {};
+  rounds.forEach(r => { byRound[r.round] = r; });
+  const recorded = rounds.filter(r => r.winner);
+  const next = rounds.find(r => !r.winner) || null;
+  const last = recorded.length ? recorded.reduce((a, b) => (b.round > a.round ? b : a)) : null;
+  const cumBid = recorded.reduce((t, r) => t + (Number(r.bid) || 0), 0);
+  const pos = recorded.map(r => Number(r.bid) || 0).filter(b => b > 0);
+  const avg = pos.length ? pos.reduce((a, b) => a + b, 0) / pos.length : 0;
+
+  // มือของฉัน: งวดที่ตรงกับชื่อ/ติ๊กเอง เรียงตามงวด แล้วนับไม่เกินจำนวนมือที่ถือ
+  const matched = recorded.filter(isMineRound).sort((a, b) => a.round - b.round);
+  const mineList = matched.slice(0, myHands);
+  const mineSet = new Set(mineList.map(r => r.round));
+  const won = {};
+  mineList.forEach((r, i) => { won[i + 1] = r.round; });
+
+  // คาดการณ์: งวดที่ยังไม่ถึงใช้ดอกขั้นต่ำ, มือที่ยังไม่เปียของฉันสมมติว่าเปียช่วงท้ายวง
+  const bids = new Array(N + 1).fill(0);
+  for (let r = 1; r <= N; r++) bids[r] = byRound[r] && byRound[r].winner ? Number(byRound[r].bid) || 0 : s.minBid;
+  const free = rounds.filter(r => !r.winner).map(r => r.round).sort((a, b) => b - a);
+  const handRounds = [];
+  let fi = 0;
+  for (let h = 1; h <= myHands; h++) handRounds.push(won[h] || (fi < free.length ? free[fi++] : null));
+  const proj = calcPlan(N, A, bids, handRounds);
+
+  let toDate = 0, paidToDate = 0, recvToDate = 0;
+  recorded.forEach(r => { const pr = proj.rounds[r.round - 1]; if (pr) { toDate += pr.net; paidToDate += pr.pay; recvToDate += pr.receive; } });
+
+  let nextReceive = 0, deadAtNext = 0;
+  if (next) {
+    nextReceive = (N - 1) * A;
+    for (let k = 1; k < next.round; k++) nextReceive += bids[k];
+    deadAtNext = mineList.filter(r => r.round < next.round).length;
+  }
+  const names = Array.from(new Set(recorded.map(r => r.winner).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'th'));
+
+  return {
+    byRound, recorded, next, last, cumBid, avg,
+    maxBid: pos.length ? Math.max(...pos) : 0, minBidSeen: pos.length ? Math.min(...pos) : 0,
+    mineList, mineSet, extraMine: matched.length - mineList.length,
+    won, bids, handRounds, proj, toDate, paidToDate, recvToDate,
+    nextPay: next ? proj.rounds[next.round - 1].pay : 0,
+    nextReceive, deadAtNext, names
+  };
+}
+
+// ================================================================ render: shell
+function renderAll() {
+  applyRole();
+  renderHeader();
+  renderHome();
+  renderTimeline();
+  if (S.page === 'stats') renderStats();
+  renderSim();
+  renderMe();
+  renderSettings();
+  renderNames();
+}
+
+function renderHeader() {
+  const d = S.data;
+  const name = d && d.settings.configured ? d.settings.circleName : 'ยังไม่ได้ตั้งค่าวง';
+  $$('[data-bind="circle-name"]').forEach(el => { el.textContent = name; });
+  $$('[data-bind="me-name"]').forEach(el => { el.textContent = S.me.name ? 'ฉัน: ' + S.me.name + ' · ' + S.me.hands + ' มือ' : 'ยังไม่ได้ระบุว่าฉันคือใคร'; });
+  $('#hdr-greet').textContent = (S.me.name ? 'สวัสดี ' + S.me.name : 'สวัสดี') + ' · ' + thDate(todayBkk(), true) + ' · ' + name;
+  $('#btn-theme').innerHTML = isDark() ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+}
+
+function renderNames() {
+  const list = (S.M && S.M.names) || [];
+  $('#names-list').innerHTML = ['ท้าวแชร์'].concat(list.filter(n => n !== 'ท้าวแชร์')).map(n => `<option value="${esc(n)}"></option>`).join('');
+}
+
+function setPage(p) {
+  if (!PAGE_TITLES[p]) p = 'home';
+  S.page = p;
+  $$('[data-page]').forEach(sec => { sec.hidden = sec.dataset.page !== p; });
+  $$('[data-nav]').forEach(b => {
+    const on = b.dataset.nav === p;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  $('#hdr-title').textContent = PAGE_TITLES[p];
+  window.scrollTo(0, 0);
+  if (S.data) {
+    if (p === 'stats') renderStats();
+    if (p === 'sim' && S.sim) drawSimChart();
+    if (p === 'me') renderMe(true);
+    if (p === 'settings') renderSettings();
+  }
+}
+
+function welcomeHtml() {
+  const admin = S.isAdmin;
+  return `<div class="card p-8 text-center fade-in">
+    <div class="w-16 h-16 mx-auto rounded-3xl bg-linear-to-br from-violet-500 to-indigo-500 text-white grid place-items-center text-2xl shadow-lg shadow-violet-500/30"><i class="fa-solid fa-people-group"></i></div>
+    <h2 class="text-xl font-bold mt-4">วงแชร์ยังไม่ได้ตั้งค่า</h2>
+    <p class="muted mt-1">${admin ? 'ตั้งจำนวนมือ เงินต่อมือ ดอกขั้นต่ำ และวันเปียก่อนเริ่มใช้งาน' : 'รอท้าวแชร์ตั้งค่าวงก่อน ถ้าคุณเป็นท้าวแชร์ กดปุ่มด้านล่างเพื่อเข้าโหมดท้าว'}</p>
+    ${admin
+      ? '<button type="button" data-nav="settings" class="btn-primary mt-5"><i class="fa-solid fa-gear"></i>ไปหน้าตั้งค่า</button>'
+      : '<button type="button" data-action="admin" class="btn-primary mt-5"><i class="fa-solid fa-lock"></i>ฉันเป็นท้าวแชร์</button>'}
+  </div>`;
+}
+
+function emptyHtml(icon, title, sub, btn) {
+  return `<div class="card p-8 text-center fade-in">
+    <div class="w-14 h-14 mx-auto rounded-2xl bg-violet-100 text-violet-500 dark:bg-violet-500/15 dark:text-violet-300 grid place-items-center text-xl"><i class="fa-solid ${icon}"></i></div>
+    <div class="font-bold mt-3">${title}</div>
+    <div class="text-sm muted mt-1">${sub || ''}</div>
+    ${btn || ''}
+  </div>`;
+}
+
+function renderLoadError(msg) {
+  $('#page-home').innerHTML = emptyHtml('fa-triangle-exclamation', 'โหลดข้อมูลไม่สำเร็จ', esc(msg),
+    '<button type="button" data-action="reload" class="btn-primary mt-4"><i class="fa-solid fa-rotate"></i>ลองใหม่</button>');
+}
+
+// ================================================================ render: home
+function statCard(o) {
+  if (o.sub && !/[<>]/.test(o.sub) && o.sub.indexOf(' · ') >= 0) o.sub = phrases(o.sub.split(' · '));
+  return `<div class="card p-4 flex flex-col gap-1.5 min-h-[136px] fade-in">
+    <div class="flex items-center justify-between gap-2">
+      <span class="w-10 h-10 rounded-2xl grid place-items-center ${o.tone}"><i class="fa-solid ${o.icon}"></i></span>
+      ${o.badge || ''}
+    </div>
+    <div class="text-xs muted mt-1">${o.label}</div>
+    <div class="text-lg md:text-2xl font-bold leading-tight break-words ${o.cls || ''}">${o.value}</div>
+    <div class="text-xs muted leading-snug">${o.sub || ''}</div>
+  </div>`;
+}
+
+function ringSvg(pct) {
+  const r = 20, c = 2 * Math.PI * r, off = c * (1 - Math.max(0, Math.min(1, pct)));
+  return `<svg viewBox="0 0 52 52" class="w-12 h-12 -rotate-90" aria-hidden="true">
+    <defs><linearGradient id="ring-g" x1="0" x2="1"><stop offset="0" stop-color="#6d5dfc"/><stop offset="1" stop-color="#4f7cff"/></linearGradient></defs>
+    <circle cx="26" cy="26" r="${r}" fill="none" stroke="var(--line)" stroke-width="6"/>
+    <circle cx="26" cy="26" r="${r}" fill="none" stroke="url(#ring-g)" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"/>
+  </svg>`;
+}
+
+const TONES = {
+  violet: 'bg-violet-100 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300',
+  blue: 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300',
+  amber: 'bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300',
+  emerald: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300',
+  rose: 'bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300',
+  sky: 'bg-sky-100 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300',
+  fuchsia: 'bg-fuchsia-100 text-fuchsia-600 dark:bg-fuchsia-500/15 dark:text-fuchsia-300',
+  indigo: 'bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300'
+};
+
+function renderHome() {
+  const el = $('#page-home');
+  const d = S.data;
+  if (!d) return;
+  const s = d.settings, M = S.M, N = s.totalHands;
+  if (!s.configured) { el.innerHTML = welcomeHtml(); return; }
+
+  const done = M.recorded.length;
+  const pct = done / N;
+  const cd = M.next ? countdown(M.next.date) : null;
+  const myWon = M.mineList.length;
+  const aliveAtNext = S.me.hands - M.deadAtNext;
+  const nextFuture = M.next && daysBetween(todayBkk(), M.next.date) > 0;
+
+  const whoBanner = S.me.name ? '' : `<div class="card p-4 mb-4 flex items-center gap-3 border-l-4 !border-l-amber-400 fade-in">
+      <span class="w-11 h-11 rounded-2xl grid place-items-center ${TONES.amber}"><i class="fa-solid fa-user-plus"></i></span>
+      <div class="flex-1 min-w-0"><div class="font-semibold">คุณคือใครในวงนี้?</div><div class="text-xs muted">ใส่ชื่อและจำนวนมือ เพื่อดูยอดจ่าย/กำไรของตัวเอง (เก็บในเครื่องนี้เท่านั้น)</div></div>
+      <button type="button" data-nav="me" class="btn-primary !py-2 text-sm shrink-0">ตั้งค่า</button>
+    </div>`;
+
+  const cards = [
+    statCard({
+      icon: 'fa-hourglass-half', tone: cd && cd.late ? TONES.amber : TONES.blue, label: M.next ? 'งวดถัดไป (งวดที่ ' + M.next.round + ')' : 'งวดถัดไป',
+      badge: M.next && S.isAdmin ? `<button type="button" data-edit-round="${M.next.round}" class="chip !py-1 !px-3 text-xs" aria-label="${nextFuture ? 'เลื่อนวันเปีย' : 'บันทึกผล'}งวดที่ ${M.next.round}"><i class="fa-solid fa-calendar-days"></i> ${nextFuture ? 'เลื่อนวัน' : 'บันทึก'}</button>` : '',
+      value: M.next ? `<span data-countdown="${M.next.date}">${cd.text}</span>` : 'ครบทุกงวดแล้ว',
+      cls: cd && cd.late ? 'text-amber-500' : '',
+      sub: M.next ? thDate(M.next.date, true) + (cd.late ? ' · รอท้าวแชร์บันทึกผล' : '') : 'วงนี้เปียครบแล้ว'
+    }),
+    statCard({
+      icon: 'fa-trophy', tone: TONES.amber, label: M.last ? 'งวดที่แล้ว (งวดที่ ' + M.last.round + ')' : 'งวดที่แล้ว',
+      value: M.last ? esc(M.last.winner) : '—',
+      sub: M.last ? 'ได้ไป · ดอก ' + money(M.last.bid) + ' บาท' : 'ยังไม่มีการเปีย'
+    }),
+    statCard({
+      icon: 'fa-coins', tone: TONES.violet, label: 'ดอกสะสม',
+      value: `<span data-count="${M.cumBid}">0</span> <span class="text-sm font-medium">บาท</span>`,
+      sub: 'รวม ' + done + ' งวดที่ผ่านมา'
+    }),
+    statCard({
+      icon: 'fa-wallet', tone: TONES.rose, label: 'งวดนี้ฉันต้องจ่าย',
+      value: M.next ? `<span data-count="${M.nextPay}">0</span> <span class="text-sm font-medium">บาท</span>` : '0',
+      sub: M.next ? 'มือเป็น ' + Math.max(0, aliveAtNext) + ' · มือตาย ' + M.deadAtNext + (S.me.name ? '' : ' (ยังไม่ระบุตัวตน)') : '—'
+    }),
+    statCard({
+      icon: 'fa-chart-simple', tone: TONES.sky, label: 'ดอกเฉลี่ย',
+      value: M.avg ? `<span data-count="${Math.round(M.avg)}">0</span> <span class="text-sm font-medium">บาท</span>` : '—',
+      sub: M.avg ? 'สูงสุด ' + money(M.maxBid) + ' · ต่ำสุด ' + money(M.minBidSeen) : 'ยังไม่มีข้อมูลดอก'
+    }),
+    statCard({
+      icon: 'fa-hand-holding-dollar', tone: TONES.fuchsia, label: 'มือของฉัน',
+      value: myWon + '/' + S.me.hands,
+      sub: myWon === S.me.hands ? 'เปียครบทุกมือแล้ว' : 'เปียแล้ว · เหลือ ' + (S.me.hands - myWon) + ' มือ'
+    }),
+    statCard({
+      icon: 'fa-flag-checkered', tone: TONES.indigo, label: 'ความคืบหน้า',
+      badge: ringSvg(pct),
+      value: Math.round(pct * 100) + '%',
+      sub: 'งวด ' + done + '/' + N
+    }),
+    statCard({
+      icon: 'fa-sack-dollar', tone: TONES.emerald, label: 'ผู้เปียงวดนี้จะได้รับ',
+      value: M.next ? `<span data-count="${M.nextReceive}">0</span> <span class="text-sm font-medium">บาท</span>` : '—',
+      sub: 'ยอดรวมจากทุกมือในวง'
+    })
+  ];
+
+  const handsHtml = M.proj.hands.map(h => {
+    const real = M.won[h.hand];
+    const status = real
+      ? `เปียงวด ${real} · ดอก ${money(h.bid)} · ได้รับ ${money(h.receive)}`
+      : (h.round ? `ยังไม่เปีย · สมมติเปียงวด ${h.round}` : 'ยังไม่เปีย');
+    return `<div class="flex items-center gap-3 py-3 border-t row-line first:border-0">
+      <span class="w-11 h-11 rounded-2xl grid place-items-center ${real ? TONES.amber : TONES.violet}"><i class="fa-solid ${real ? 'fa-crown' : 'fa-hand'}"></i></span>
+      <div class="flex-1 min-w-0"><div class="font-semibold">มือ ${h.hand}</div><div class="text-xs muted truncate">${status}</div></div>
+      <div class="text-right"><div class="font-bold ${plClass(h.net)}">${signed(h.net)}</div><div class="text-[11px] muted">คาดการณ์</div></div>
+    </div>`;
+  }).join('');
+
+  const upcoming = d.rounds.filter(r => !r.winner).slice(0, 3);
+  const upHtml = upcoming.length ? upcoming.map(r => {
+    const c = countdown(r.date);
+    return `<div class="w-full flex items-center gap-3 py-3 border-t row-line first:border-0">
+      <span class="w-11 h-11 rounded-2xl grid place-items-center ${TONES.blue} text-sm font-bold">${r.round}</span>
+      <div class="flex-1 min-w-0"><div class="font-semibold">งวดที่ ${r.round}</div><div class="text-xs muted">${thDate(r.date, true)}</div></div>
+      <span class="text-sm font-semibold ${c.late ? 'text-amber-500' : 'text-violet-500'}" data-countdown="${r.date}">${c.text}</span>
+    </div>`;
+  }).join('') : '<p class="text-sm muted py-3">เปียครบทุกงวดแล้ว</p>';
+
+  const assumed = M.proj.hands.filter(h => !M.won[h.hand] && h.round).map(h => h.round).sort((a, b) => a - b);
+
+  el.innerHTML = whoBanner + `
+    <div class="relative overflow-hidden rounded-[28px] p-5 md:p-6 text-white bg-linear-to-br from-violet-500 via-indigo-500 to-blue-500 shadow-xl shadow-indigo-500/25 mb-4 fade-in">
+      <div class="absolute -right-10 -top-10 w-44 h-44 rounded-full bg-white/10"></div>
+      <div class="absolute right-16 -bottom-16 w-40 h-40 rounded-full bg-white/10"></div>
+      <div class="relative">
+        <div class="flex items-center gap-2 text-sm text-white/85">กำไร/ขาดทุนคาดการณ์ของฉัน (${S.me.hands} มือ)
+          <button type="button" data-action="explain" class="w-6 h-6 rounded-full bg-white/20 grid place-items-center text-xs" aria-label="วิธีคิด"><i class="fa-solid fa-info"></i></button>
+        </div>
+        <div class="text-4xl md:text-5xl font-bold mt-1 tracking-tight"><span data-count="${M.proj.totalNet}" data-signed="1">0</span> <span class="text-lg font-medium">บาท</span></div>
+        <div class="text-sm text-white/85 mt-1">${phrases(['สุทธิถึงวันนี้ ' + signed(M.toDate) + ' บาท', 'จ่ายแล้ว ' + money(M.paidToDate), 'รับแล้ว ' + money(M.recvToDate)])}</div>
+        ${assumed.length ? `<div class="text-xs text-white/75 mt-1">${phrases(['สมมติมือที่ยังไม่เปียได้งวด ' + assumed.join(', '), 'งวดที่ยังไม่ถึงดอก ' + money(s.minBid)])}</div>` : ''}
+        <div class="mt-4 flex items-center gap-3">
+          <div class="flex-1 h-2.5 rounded-full bg-white/25 overflow-hidden"><div class="h-full rounded-full bg-white" style="width:${(pct * 100).toFixed(1)}%"></div></div>
+          <span class="text-sm font-semibold">งวด ${done}/${N}</span>
+        </div>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">${cards.join('')}</div>
+    <div class="grid md:grid-cols-2 gap-4">
+      <div class="card p-5 fade-in">
+        <div class="flex items-center mb-1"><h2 class="font-bold flex-1"><i class="fa-solid fa-hand-holding-dollar text-violet-500"></i> มือของฉัน</h2><button type="button" data-nav="me" class="text-sm text-violet-500">แก้ไข <i class="fa-solid fa-chevron-right text-xs"></i></button></div>
+        ${handsHtml}
+      </div>
+      <div class="card p-5 fade-in">
+        <div class="flex items-center mb-1"><h2 class="font-bold flex-1"><i class="fa-solid fa-calendar-check text-violet-500"></i> งวดที่จะถึง</h2><button type="button" data-nav="timeline" class="text-sm text-violet-500">ดูทั้งหมด <i class="fa-solid fa-chevron-right text-xs"></i></button></div>
+        ${upHtml}
+      </div>
+    </div>`;
+  animateCounts(el);
+}
+
+function explainProjection() {
+  const s = S.data.settings, M = S.M;
+  const rows = M.proj.hands.map(h => {
+    const real = !!M.won[h.hand];
+    return `<tr class="border-t"><td class="py-1.5">มือ ${h.hand}</td><td>${h.round ? 'งวด ' + h.round + (real ? '' : ' <span class="opacity-60">(สมมติ)</span>') : '-'}</td>
+      <td class="text-right">${money(h.receive)}</td><td class="text-right">${money(h.paid)}</td><td class="text-right font-bold ${plClass(h.net)}">${signed(h.net)}</td></tr>`;
+  }).join('');
+  Swal.fire({
+    title: 'ตัวเลขนี้มาจากไหน',
+    icon: 'info',
+    width: 560,
+    confirmButtonColor: ACCENT,
+    confirmButtonText: 'เข้าใจแล้ว',
+    html: `<div class="text-left text-sm leading-relaxed">
+      <table class="w-full text-xs mb-2"><thead><tr class="opacity-70"><th class="text-left">มือ</th><th class="text-left">เปีย</th><th class="text-right">ได้รับ</th><th class="text-right">จ่ายรวม</th><th class="text-right">สุทธิ</th></tr></thead>
+      <tbody>${rows}<tr class="border-t font-bold"><td colspan="4" class="py-1.5">รวม</td><td class="text-right ${plClass(M.proj.totalNet)}">${signed(M.proj.totalNet)}</td></tr></tbody></table>
+      <b>สมมติฐาน</b><br>
+      • มือที่ยังไม่เปีย สมมติว่าได้งวดท้ายวง (กรณีดีที่สุด เพราะได้ดอกของคนอื่นสะสมมากที่สุด)<br>
+      • งวดที่ยังไม่บันทึก ใช้ดอกขั้นต่ำ ${money(s.minBid)} บาททุกงวด<br>
+      • ได้รับ = (${s.totalHands} − 1) × ${money(s.handAmount)} + ดอกสะสมของงวดก่อนหน้า<br>
+      • จ่ายรวม = มือเป็นจ่าย ${money(s.handAmount)}/งวด, มือตายจ่าย ${money(s.handAmount)} + ดอกตัวเอง/งวด<br><br>
+      ถ้าเปียเร็ว ตัวเลขจะลดลง/ติดลบ — ลองเปลี่ยนงวดที่เปียได้ที่หน้า "จำลอง"</div>`
+  });
+}
+
+function animateCounts(root) {
+  $$('[data-count]', root).forEach(el => {
+    const to = Number(el.dataset.count) || 0;
+    const sign = el.dataset.signed === '1';
+    const fmt = v => (sign ? signed(v) : money(v));
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = fmt(to); return; }
+    const start = performance.now(), dur = 650;
+    const step = now => {
+      const t = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - t, 3);
+      el.textContent = fmt(t < 1 ? Math.round(to * e) : to);
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+// ================================================================ render: timeline
+function roundStatus(r) {
+  if (r.winner) return S.M.mineSet.has(r.round) ? 'mine' : 'done';
+  if (S.M.next && r.round === S.M.next.round) return 'next';
+  if (daysBetween(todayBkk(), r.date) < 0) return 'late';
+  return 'future';
+}
+const STATUS_BADGE = {
+  done: '<span class="tag-real"><i class="fa-solid fa-check"></i> ผ่านแล้ว</span>',
+  mine: '<span class="chip-gold"><i class="fa-solid fa-crown"></i> มือฉัน</span>',
+  next: '<span class="text-xs px-2 py-0.5 rounded-full bg-blue-500 text-white">งวดถัดไป</span>',
+  late: '<span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">รอบันทึก</span>',
+  future: '<span class="text-xs muted">ยังไม่ถึง</span>'
+};
+
+function mineToggleBtn(r) {
+  if (!r.winner) return '';
+  const on = S.M.mineSet.has(r.round) || isMineRound(r);
+  return `<button type="button" class="mine-btn" data-mine-toggle="${r.round}" aria-pressed="${on}" title="${on ? 'ไม่ใช่มือของฉัน' : 'นับเป็นมือของฉัน'}" aria-label="งวดที่ ${r.round} ${on ? 'เป็นมือของฉัน แตะเพื่อยกเลิก' : 'แตะเพื่อนับเป็นมือของฉัน'}"><i class="fa-solid fa-crown"></i></button>`;
+}
+
+function renderTimeline() {
+  const el = $('#page-timeline');
+  const d = S.data;
+  if (!d) return;
+  if (!d.settings.configured) { el.innerHTML = welcomeHtml(); return; }
+  const filters = [['all', 'ทั้งหมด'], ['mine', 'มือฉัน'], ['done', 'ผ่านแล้ว'], ['upcoming', 'ยังไม่ถึง']];
+  const list = d.rounds.filter(r =>
+    S.tlFilter === 'mine' ? S.M.mineSet.has(r.round) : S.tlFilter === 'done' ? !!r.winner : S.tlFilter === 'upcoming' ? !r.winner : true);
+
+  const toolbar = `<div class="flex items-center gap-3 mb-4 flex-wrap">
+    <div class="seg" role="group" aria-label="มุมมอง">
+      <button type="button" data-tl-view="timeline" class="${S.tlView === 'timeline' ? 'active' : ''}"><i class="fa-solid fa-timeline"></i> ไทม์ไลน์</button>
+      <button type="button" data-tl-view="table" class="${S.tlView === 'table' ? 'active' : ''}"><i class="fa-solid fa-table"></i> ตาราง</button>
+    </div>
+    <div class="flex gap-2 overflow-x-auto no-scrollbar">${filters.map(f => `<button type="button" data-tl-filter="${f[0]}" class="chip ${S.tlFilter === f[0] ? 'active' : ''}">${f[1]}</button>`).join('')}</div>
+  </div>`;
+
+  if (!list.length) {
+    el.innerHTML = toolbar + emptyHtml('fa-inbox', 'ยังไม่มีข้อมูล', S.tlFilter === 'mine' ? 'ยังไม่มีงวดที่เป็นของคุณ ตั้งชื่อที่หน้า "ของฉัน" หรือแตะมงกุฎที่การ์ดงวด' : 'ไม่มีงวดที่ตรงกับตัวกรองนี้');
+    return;
+  }
+
+  let body;
+  if (S.tlView === 'table') {
+    // ตารางแบบกระชับให้พอดีจอมือถือ: ช่อง "ฉัน" รวมจ่าย/รับเป็นยอดสุทธิของงวดนั้น
+    const shortBadge = {
+      next: '<span class="text-[11px] px-2 py-0.5 rounded-full bg-blue-500 text-white whitespace-nowrap">ถัดไป</span>',
+      late: '<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 whitespace-nowrap">รอบันทึก</span>',
+      future: '<span class="muted">—</span>'
+    };
+    body = `<div class="card overflow-x-auto fade-in"><table class="w-full text-sm">
+      <thead><tr class="text-left text-xs muted whitespace-nowrap"><th class="py-3 pl-4 pr-2">งวด</th><th class="px-2">วันที่</th><th class="px-2">ผู้ได้</th><th class="px-2 text-right">ดอก</th><th class="pl-2 pr-4 text-right">ฉัน</th></tr></thead>
+      <tbody>${list.map(r => {
+        const pr = S.M.proj.rounds[r.round - 1] || { pay: 0, receive: 0, net: 0 };
+        const st = roundStatus(r);
+        const mine = S.M.mineSet.has(r.round);
+        const who = r.winner
+          ? `<span class="inline-flex items-center gap-1 max-w-[7.5rem]"><span class="truncate">${esc(r.winner)}</span>${mine ? '<i class="fa-solid fa-crown text-amber-500 shrink-0"></i>' : ''}</span>`
+          : shortBadge[st];
+        return `<tr ${S.isAdmin ? `data-edit-round="${r.round}"` : ''} class="border-t row-line whitespace-nowrap ${S.isAdmin ? 'cursor-pointer hover:bg-violet-50/60 dark:hover:bg-white/5' : ''} ${st === 'next' ? 'bg-blue-50/70 dark:bg-blue-500/10' : ''}">
+          <td class="py-3 pl-4 pr-2 font-semibold">${r.round}</td>
+          <td class="px-2">${thDate(r.date)}</td>
+          <td class="px-2">${who}</td>
+          <td class="px-2 text-right">${r.winner ? money(r.bid) : '<span class="muted">-</span>'}</td>
+          <td class="pl-2 pr-4 text-right font-semibold ${pr.net > 0 ? 'text-emerald-500' : 'text-rose-500'} ${r.winner ? '' : 'opacity-60'}">${signed(pr.net)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>
+      <p class="text-xs muted px-4 py-3 border-t row-line">ช่อง "ฉัน" = ยอดสุทธิของคุณในงวดนั้น (ลบ = จ่าย, บวก = ได้รับ) · งวดที่ยังไม่บันทึกเป็นยอดคาดการณ์ (สีจาง)${S.isAdmin ? ' · แตะแถวเพื่อแก้ไข' : ''}</p></div>`;
+  } else {
+    body = `<div class="tl">${list.map(r => {
+      const st = roundStatus(r);
+      const pr = S.M.proj.rounds[r.round - 1] || { pay: 0, receive: 0 };
+      const c = countdown(r.date);
+      const sub = r.winner
+        ? 'ดอก ' + money(r.bid) + ' บาท'
+        : (st === 'next' ? `<span data-countdown="${r.date}">${c.text}</span>` : st === 'late' ? 'เลยวันแล้ว รอท้าวแชร์บันทึกผล' : 'ยังไม่ถึงวันเปีย');
+      const mine = S.M.mineSet.has(r.round);
+      const avatar = mine ? TONES.amber : r.winner ? TONES.violet : 'bg-slate-100 text-slate-400 dark:bg-white/5';
+      return `<div class="tl-item ${st} mb-3">
+        <span class="tl-dot"></span>
+        <div class="card w-full p-4 ${st === 'next' ? 'next-glow' : ''}">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-bold">งวด ${r.round}</span>
+            <span class="text-sm muted">${thDate(r.date, true)}</span>
+            <span class="ml-auto flex items-center gap-2">${STATUS_BADGE[st]}${S.isAdmin ? `<button type="button" data-edit-round="${r.round}" class="chip !py-1 !px-3 text-xs" aria-label="แก้ไขงวดที่ ${r.round}"><i class="fa-solid fa-pen"></i> แก้ไข</button>` : ''}</span>
+          </div>
+          <div class="mt-3 flex items-center gap-3">
+            <span class="w-10 h-10 rounded-full grid place-items-center ${avatar}"><i class="fa-solid ${mine ? 'fa-crown' : r.winner ? 'fa-user' : 'fa-hourglass'}"></i></span>
+            <div class="flex-1 min-w-0">
+              <div class="font-semibold truncate">${r.winner ? esc(r.winner) : 'ยังไม่มีผู้เปีย'}</div>
+              <div class="text-xs muted">${sub}</div>
+            </div>
+            <div class="text-right text-xs leading-relaxed">
+              ${pr.receive ? `<div class="text-emerald-500 font-semibold text-sm">${r.winner ? 'ฉันรับ' : 'คาดรับ'} +${money(pr.receive)}</div>` : ''}
+              <div class="muted">${r.winner ? 'ฉันจ่าย' : 'คาดจ่าย'} ${money(pr.pay)}</div>
+            </div>
+            ${mineToggleBtn(r)}
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  el.innerHTML = toolbar + body;
+}
+
+function toggleMine(n) {
+  const r = S.M.byRound[n];
+  if (!r || !r.winner) return;
+  const now = S.M.mineSet.has(n) || isMineRound(r);
+  const byName = !!S.me.name && normName(r.winner) === normName(S.me.name);
+  // ถ้าค่าใหม่ตรงกับที่ชื่อบอกอยู่แล้ว ไม่ต้องเก็บ override
+  if (!now === byName) delete S.me.overrides[n];
+  else S.me.overrides[n] = !now;
+  if (!now && S.M.mineList.length >= S.me.hands) {
+    toast('warning', 'คุณถือ ' + S.me.hands + ' มือ และนับครบแล้ว เพิ่มจำนวนมือที่หน้า "ของฉัน"');
+  }
+  if (saveMe()) refreshPersonal();
+}
+
+// ================================================================ render: stats
+function chartTheme() {
+  const dark = isDark();
+  return { text: dark ? '#cbd5e1' : '#475569', grid: dark ? 'rgba(255,255,255,.07)' : 'rgba(15,23,42,.06)' };
+}
+function makeChart(key, canvasId, cfg) {
+  if (S.charts[key]) { S.charts[key].destroy(); delete S.charts[key]; }
+  if (!window.Chart) return;
+  const c = document.getElementById(canvasId);
+  if (!c) return;
+  S.charts[key] = new Chart(c, cfg);
+}
+function baseOptions(extra) {
+  const t = chartTheme();
+  return Object.assign({
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => money(ctx.parsed.y != null ? ctx.parsed.y : ctx.parsed) + ' บาท' } } },
+    scales: {
+      x: { ticks: { color: t.text }, grid: { display: false } },
+      y: { ticks: { color: t.text, callback: v => money(v) }, grid: { color: t.grid }, beginAtZero: true }
+    }
+  }, extra || {});
+}
+
+function renderStats() {
+  const el = $('#page-stats');
+  const d = S.data;
+  if (!d) return;
+  if (!d.settings.configured) { el.innerHTML = welcomeHtml(); return; }
+  const M = S.M, rec = M.recorded;
+  if (!rec.length) {
+    el.innerHTML = emptyHtml('fa-chart-column', 'ยังไม่มีงวดที่บันทึก', 'พอท้าวแชร์บันทึกผลงวดแรก กราฟจะขึ้นที่นี่');
+    return;
+  }
+  const mini = (icon, tone, label, value) => `<div class="card p-4"><div class="flex items-center gap-2 text-xs muted"><span class="w-8 h-8 rounded-xl grid place-items-center ${tone}"><i class="fa-solid ${icon}"></i></span>${label}</div><div class="text-xl font-bold mt-2">${value}</div></div>`;
+  el.innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 fade-in">
+      ${mini('fa-list-ol', TONES.violet, 'งวดที่ผ่านมา', rec.length + ' / ' + d.settings.totalHands)}
+      ${mini('fa-coins', TONES.amber, 'ดอกสะสม', money(M.cumBid) + ' บาท')}
+      ${mini('fa-chart-simple', TONES.sky, 'ดอกเฉลี่ย', M.avg ? money(Math.round(M.avg)) + ' บาท' : '—')}
+      ${mini('fa-arrows-up-down', TONES.rose, 'สูงสุด / ต่ำสุด', M.avg ? money(M.maxBid) + ' / ' + money(M.minBidSeen) : '—')}
+    </div>
+    <div class="grid md:grid-cols-3 gap-4">
+      <div class="card p-5 md:col-span-2 fade-in">
+        <h3 class="font-bold mb-1"><i class="fa-solid fa-chart-column text-violet-500"></i> ดอกแต่ละงวด</h3>
+        <div class="text-xs muted mb-3"><span class="inline-block w-3 h-3 rounded bg-[#7c6cf6] align-middle"></span> คนอื่น <span class="inline-block w-3 h-3 rounded bg-[#f5a524] align-middle ml-3"></span> มือของฉัน</div>
+        <div class="h-64"><canvas id="ch-bids" aria-label="กราฟดอกแต่ละงวด"></canvas></div>
+      </div>
+      <div class="card p-5 fade-in">
+        <h3 class="font-bold mb-3"><i class="fa-solid fa-chart-pie text-violet-500"></i> ฉันจ่าย vs รับ (ถึงวันนี้)</h3>
+        <div class="h-52"><canvas id="ch-donut" aria-label="กราฟจ่ายเทียบรับ"></canvas></div>
+        <div class="grid grid-cols-2 gap-2 mt-3 text-center text-sm">
+          <div><div class="muted text-xs">จ่ายแล้ว</div><div class="font-bold text-rose-500">${money(M.paidToDate)}</div></div>
+          <div><div class="muted text-xs">รับแล้ว</div><div class="font-bold text-emerald-500">${money(M.recvToDate)}</div></div>
+        </div>
+      </div>
+      <div class="card p-5 md:col-span-3 fade-in">
+        <h3 class="font-bold mb-3"><i class="fa-solid fa-chart-line text-violet-500"></i> ดอกสะสมตามงวด</h3>
+        <div class="h-60"><canvas id="ch-cum" aria-label="กราฟดอกสะสม"></canvas></div>
+      </div>
+    </div>
+    <div class="card p-5 mt-4 overflow-x-auto fade-in">
+      <h3 class="font-bold mb-2"><i class="fa-solid fa-users text-violet-500"></i> ใครได้งวดไหน</h3>
+      <table class="w-full text-sm"><thead><tr class="text-left text-xs muted"><th class="py-2">งวด</th><th>วันที่</th><th>ผู้ได้</th><th class="text-right">ดอก</th><th class="text-right">ยอดที่ได้รับ</th></tr></thead>
+      <tbody>${rec.map(r => `<tr class="border-t row-line"><td class="py-2 font-semibold">${r.round}</td><td class="whitespace-nowrap">${thDate(r.date)}</td><td>${esc(r.winner)}${M.mineSet.has(r.round) ? ' <i class="fa-solid fa-crown text-amber-500"></i>' : ''}</td><td class="text-right">${money(r.bid)}</td><td class="text-right">${money(M.proj.rounds[r.round - 1].pot)}</td></tr>`).join('')}</tbody></table>
+    </div>`;
+  drawStatsCharts();
+}
+
+function drawStatsCharts() {
+  const M = S.M, rec = M.recorded, t = chartTheme();
+  const labels = rec.map(r => 'งวด ' + r.round);
+  makeChart('bids', 'ch-bids', {
+    type: 'bar',
+    data: { labels, datasets: [{ data: rec.map(r => r.bid), backgroundColor: rec.map(r => (M.mineSet.has(r.round) ? '#f5a524' : '#7c6cf6')), borderRadius: 8, maxBarThickness: 34 }] },
+    options: baseOptions()
+  });
+  let cum = 0;
+  makeChart('cum', 'ch-cum', {
+    type: 'line',
+    data: {
+      labels, datasets: [{
+        data: rec.map(r => (cum += Number(r.bid) || 0)), borderColor: '#4f7cff', borderWidth: 3, tension: .35, pointRadius: 3, pointBackgroundColor: '#4f7cff', fill: true,
+        backgroundColor: ctx => {
+          const { chart } = ctx; const area = chart.chartArea;
+          if (!area) return 'rgba(79,124,255,.15)';
+          const g = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+          g.addColorStop(0, 'rgba(109,93,252,.35)'); g.addColorStop(1, 'rgba(79,124,255,0)');
+          return g;
+        }
+      }]
+    },
+    options: baseOptions()
+  });
+  const has = M.paidToDate > 0 || M.recvToDate > 0;
+  makeChart('donut', 'ch-donut', {
+    type: 'doughnut',
+    data: { labels: ['จ่ายแล้ว', 'รับแล้ว'], datasets: [{ data: has ? [M.paidToDate, M.recvToDate] : [1, 0], backgroundColor: has ? ['#f43f5e', '#10b981'] : [t.grid, t.grid], borderWidth: 0 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'bottom', labels: { color: t.text } }, tooltip: { callbacks: { label: c => c.label + ' ' + money(c.parsed) + ' บาท' } } } }
+  });
+}
+
+// ================================================================ simulation (ส่วนตัว)
+function isLocked(r) { const x = S.M.byRound[r]; return !!(x && x.winner); }
+function canPick(r) { const x = S.M.byRound[r]; return !x || !x.winner || S.M.mineSet.has(r); }
+
+function fillMissingHandRounds(sim) {
+  const used = new Set(sim.handRounds.filter(Boolean));
+  const free = [];
+  for (let r = 1; r <= sim.N; r++) if (!isLocked(r) && !used.has(r)) free.push(r);
+  const missing = [];
+  sim.handRounds.forEach((k, i) => { if (!k) missing.push(i); });
+  missing.forEach((hi, j) => {
+    if (!free.length) return;
+    let pos = Math.floor((j + 1) * free.length / (missing.length + 1));
+    pos = Math.min(free.length - 1, Math.max(0, pos));
+    sim.handRounds[hi] = free.splice(pos, 1)[0];
+  });
+}
+
+function defaultFill(s) { return { min: s.minBid, max: s.minBid + 50, step: 10, pattern: 'desc' }; }
+
+function newSim() {
+  const s = S.data.settings, N = s.totalHands;
+  const sim = {
+    N, A: s.handAmount, minBid: s.minBid, n: Math.min(4, Math.max(1, S.me.hands)),
+    handRounds: [], bids: new Array(N + 1).fill(s.minBid), fill: defaultFill(s),
+    result: null, dirty: false, planId: null, planName: ''
+  };
+  sim.bids[0] = 0;
+  S.data.rounds.forEach(r => { if (r.winner) sim.bids[r.round] = Number(r.bid) || 0; });
+  for (let h = 1; h <= sim.n; h++) sim.handRounds.push(S.M.won[h] || null);
+  fillMissingHandRounds(sim);
+  sim.result = calcPlan(N, sim.A, sim.bids, sim.handRounds);
+  return sim;
+}
+
+function planToSim(p) {
+  const s = S.data.settings, N = s.totalHands, data = (p && p.data) || {};
+  const sim = {
+    N, A: s.handAmount, minBid: s.minBid, n: Math.min(4, Math.max(1, parseInt(data.numHands, 10) || 1)),
+    handRounds: [], bids: new Array(N + 1).fill(s.minBid),
+    fill: Object.assign(defaultFill(s), data.fill || {}),
+    result: null, dirty: false, planId: p.id, planName: p.name
+  };
+  sim.bids[0] = 0;
+  const pb = Array.isArray(data.bids) ? data.bids : [];
+  for (let r = 1; r <= N; r++) {
+    if (isLocked(r)) sim.bids[r] = Number(S.M.byRound[r].bid) || 0;
+    else if (pb[r - 1] != null && isFinite(Number(pb[r - 1]))) sim.bids[r] = Number(pb[r - 1]);
+  }
+  const seen = new Set();
+  (Array.isArray(data.handRounds) ? data.handRounds : []).slice(0, sim.n).forEach(k => {
+    k = parseInt(k, 10);
+    const ok = k >= 1 && k <= N && canPick(k) && !seen.has(k);
+    if (ok) seen.add(k);
+    sim.handRounds.push(ok ? k : null);
+  });
+  while (sim.handRounds.length < sim.n) sim.handRounds.push(null);
+  fillMissingHandRounds(sim);
+  sim.result = calcPlan(N, sim.A, sim.bids, sim.handRounds);
+  return sim;
+}
+
+/** หลังโหลดข้อมูลใหม่: งวดที่เพิ่งบันทึกจริงจะใช้ดอกจริงแทนดอกสมมติ */
+function refreshSimLocks() {
+  const sim = S.sim;
+  let changed = false;
+  for (let r = 1; r <= sim.N; r++) {
+    if (isLocked(r)) {
+      const real = Number(S.M.byRound[r].bid) || 0;
+      if (sim.bids[r] !== real) { sim.bids[r] = real; changed = true; }
+    }
+  }
+  sim.handRounds = sim.handRounds.map(k => {
+    if (k && !canPick(k)) { changed = true; return null; }
+    return k;
+  });
+  if (sim.handRounds.some(k => !k)) fillMissingHandRounds(sim);
+  if (changed) sim.dirty = true;
+}
+
+function markDirty() {
+  S.sim.dirty = true;
+  $('#sim-dirty').classList.remove('hidden');
+}
+
+function renderSim() {
+  const d = S.data;
+  if (!d) return;
+  const unc = $('#sim-unconfigured'), body = $('#sim-body');
+  if (!d.settings.configured || !S.sim) {
+    unc.classList.remove('hidden');
+    unc.innerHTML = welcomeHtml();
+    body.classList.add('hidden');
+    return;
+  }
+  unc.classList.add('hidden');
+  body.classList.remove('hidden');
+  $$('[data-sim-hands]').forEach(b => b.classList.toggle('active', +b.dataset.simHands === S.sim.n));
+  renderHandRows();
+  renderRealInfo();
+  renderFill();
+  renderSimTable();
+  renderSimResult();
+  renderPlans();
+}
+
+function renderHandRows() {
+  const sim = S.sim;
+  $('#sim-hand-rows').innerHTML = sim.handRounds.map((k, i) => {
+    const used = new Set(sim.handRounds.filter((x, j) => x && j !== i));
+    let opts = '<option value="">— เลือกงวด —</option>';
+    for (let r = 1; r <= sim.N; r++) {
+      if (!canPick(r)) continue;
+      const rr = S.M.byRound[r];
+      const dis = used.has(r);
+      opts += `<option value="${r}" ${k === r ? 'selected' : ''} ${dis ? 'disabled' : ''}>งวด ${r} · ${thDate(rr ? rr.date : '')}${isLocked(r) ? ' (จริง)' : ''}${dis ? ' — มืออื่นเลือกแล้ว' : ''}</option>`;
+    }
+    return `<div class="flex items-center gap-2">
+      <span class="chip-gold shrink-0 !py-2 !px-2 w-14 text-center">มือ ${i + 1}</span>
+      <select class="field flex-1 min-w-0" data-hand-idx="${i}" aria-label="งวดที่มือ ${i + 1} เปีย">${opts}</select>
+    </div>`;
+  }).join('');
+}
+
+function renderRealInfo() {
+  const n = S.M.recorded.length;
+  $('#sim-real-info').innerHTML = n
+    ? `<i class="fa-solid fa-circle-check text-emerald-500"></i> ดึงดอกจริง <b>${n}</b> งวดจากประวัติวงมาใส่ให้แล้ว (ล็อกไว้) · งวดที่เหลือ <b>${S.sim.N - n}</b> งวดใส่ดอกสมมติได้`
+    : '<i class="fa-solid fa-circle-info text-violet-500"></i> ยังไม่มีประวัติดอก — ทุกงวดเป็นดอกสมมติ';
+}
+
+function fillLevels(f) {
+  const out = [];
+  if (!(f.step > 0) || !(f.max >= f.min) || !(f.min >= 0)) return out;
+  for (let v = f.min; v <= f.max + 1e-9 && out.length <= 1000; v += f.step) out.push(Math.round(v * 100) / 100);
+  return out;
+}
+
+function renderFill() {
+  const f = S.sim.fill;
+  $('#fill-min').value = f.min;
+  $('#fill-max').value = f.max;
+  $('#fill-step').value = f.step;
+  $('#fill-pattern').value = f.pattern;
+  renderFillLevels();
+}
+
+function readFill() {
+  return {
+    min: parseFloat($('#fill-min').value),
+    max: parseFloat($('#fill-max').value),
+    step: parseFloat($('#fill-step').value),
+    pattern: $('#fill-pattern').value
+  };
+}
+
+function fillError(f) {
+  if (!(f.min >= 0)) return 'ต่ำสุดต้องเป็นตัวเลข 0 ขึ้นไป';
+  if (!(f.max >= f.min)) return 'สูงสุดต้องไม่น้อยกว่าต่ำสุด';
+  if (!(f.step > 0)) return 'ขั้นต้องมากกว่า 0';
+  if ((f.max - f.min) / f.step > 1000) return 'ขั้นละเอียดเกินไป';
+  return '';
+}
+
+function renderFillLevels() {
+  const f = readFill();
+  const err = fillError(f);
+  const fe = $('#fill-error');
+  fe.textContent = err;
+  fe.classList.toggle('hidden', !err);
+  if (err) { $('#fill-levels').textContent = ''; return; }
+  const lv = fillLevels(f);
+  $('#fill-levels').textContent = lv.length > 7
+    ? 'ระดับดอก: ' + lv.slice(0, 3).map(money).join(', ') + ', …, ' + money(lv[lv.length - 1]) + ' (' + lv.length + ' ระดับ)'
+    : 'ระดับดอก: ' + lv.map(money).join(', ');
+}
+
+function autoFill() {
+  const sim = S.sim, f = readFill();
+  const err = fillError(f);
+  if (err) { showError(err); return; }
+  const levels = fillLevels(f);
+  const targets = [];
+  for (let r = 1; r <= sim.N; r++) if (!isLocked(r)) targets.push(r);
+  if (!targets.length) { toast('info', 'ไม่มีงวดที่ยังไม่ถึงให้กรอก'); return; }
+  targets.forEach((r, i) => {
+    const t = targets.length > 1 ? i / (targets.length - 1) : 0;
+    let v;
+    if (f.pattern === 'random') v = levels[Math.floor(Math.random() * levels.length)];
+    else if (f.pattern === 'const') v = f.min;
+    else {
+      v = f.pattern === 'desc' ? f.max - (f.max - f.min) * t : f.min + (f.max - f.min) * t;
+      v = f.min + Math.round((v - f.min) / f.step) * f.step;
+      v = Math.min(f.max, Math.max(f.min, v));
+    }
+    sim.bids[r] = Math.round(v * 100) / 100;
+  });
+  sim.fill = f;
+  markDirty();
+  renderSimTable();
+  renderHandRows();
+  toast('success', 'กรอกดอกสมมติ ' + targets.length + ' งวดแล้ว');
+}
+
+function renderSimTable() {
+  const sim = S.sim, s = S.data.settings;
+  const handOf = {};
+  sim.handRounds.forEach((k, i) => { if (k) handOf[k] = i + 1; });
+  let rows = '';
+  for (let r = 1; r <= sim.N; r++) {
+    const rr = S.M.byRound[r] || {};
+    const locked = isLocked(r);
+    const h = handOf[r];
+    const warn = !locked && sim.bids[r] < s.minBid && r !== 1 && r !== sim.N;
+    const who = h ? `<span class="chip-gold">มือ ${h}</span>` : (locked ? esc(rr.winner) : '<span class="muted">คนอื่น</span>');
+    const bidCell = locked
+      ? `<span class="inline-flex items-center gap-1 muted"><i class="fa-solid fa-lock text-xs"></i>${money(sim.bids[r])}</span>`
+      : `<input type="number" inputmode="decimal" min="0" step="1" class="field bid-input ${warn ? 'warn' : ''}" data-bid-round="${r}" value="${sim.bids[r]}" aria-label="ดอกงวด ${r}">`;
+    rows += `<tr class="border-t row-line ${locked ? 'bg-slate-50/70 dark:bg-white/[.03]' : ''}">
+      <td class="py-2 px-3 font-semibold">${r}</td>
+      <td class="px-2 whitespace-nowrap muted">${thDate(rr.date)}</td>
+      <td class="px-2">${who}${locked ? ' <span class="tag-real">จริง</span>' : ''}</td>
+      <td class="px-3 py-1.5 text-right">${bidCell}</td>
+    </tr>`;
+  }
+  $('#sim-table').innerHTML = `<table class="w-full text-sm"><thead class="sticky top-0 bg-[var(--panel)] z-[1]"><tr class="text-left text-xs muted"><th class="py-2 px-3">งวด</th><th class="px-2">วันที่</th><th class="px-2">ผู้ได้</th><th class="px-3 text-right">ดอก (บาท)</th></tr></thead><tbody>${rows}</tbody></table>
+    <p class="text-xs muted px-3 pt-2">กรอบแดง = ต่ำกว่าดอกขั้นต่ำ ${money(s.minBid)} บาท</p>`;
+}
+
+function recalc(quiet) {
+  const sim = S.sim, errs = [], seen = new Set();
+  sim.handRounds.forEach((k, i) => {
+    if (!k) errs.push('มือ ' + (i + 1) + ' ยังไม่ได้เลือกงวดที่เปีย');
+    else if (seen.has(k)) errs.push('มือ ' + (i + 1) + ' เลือกงวดซ้ำกับมืออื่น');
+    else if (!canPick(k)) errs.push('งวด ' + k + ' มีคนอื่นเปียไปแล้ว');
+    if (k) seen.add(k);
+  });
+  for (let r = 1; r <= sim.N; r++) if (!(sim.bids[r] >= 0)) errs.push('ดอกงวด ' + r + ' ไม่ถูกต้อง');
+  if (errs.length) {
+    Swal.fire({ icon: 'warning', title: 'ตรวจข้อมูลอีกครั้ง', html: errs.slice(0, 6).map(esc).join('<br>'), confirmButtonColor: ACCENT, confirmButtonText: 'ตกลง' });
+    return false;
+  }
+  sim.result = calcPlan(sim.N, sim.A, sim.bids, sim.handRounds);
+  sim.dirty = false;
+  renderSimResult();
+  renderPlans();
+  if (!quiet) {
+    toast('success', 'คำนวณใหม่แล้ว');
+    $('#sim-result-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  return true;
+}
+
+function renderSimResult() {
+  const sim = S.sim, el = $('#sim-result');
+  $('#sim-dirty').classList.toggle('hidden', !sim.dirty);
+  const res = sim.result;
+  if (!res) { el.innerHTML = emptyHtml('fa-calculator', 'ยังไม่ได้คำนวณ', 'กด "คำนวณใหม่" เพื่อดูผล'); return; }
+  const good = res.totalNet >= 0;
+  const handCards = res.hands.map(h => `<div class="rounded-2xl p-3 border row-line">
+      <div class="flex items-center justify-between gap-2"><span class="chip-gold">มือ ${h.hand}</span><span class="font-bold ${plClass(h.net)}">${signed(h.net)}</span></div>
+      <div class="text-xs muted mt-2 leading-relaxed">เปียงวด ${h.round || '-'} · ดอก ${money(h.bid)}<br>รับ ${money(h.receive)} · จ่ายรวม ${money(h.paid)}</div>
+    </div>`).join('');
+  const detail = res.rounds.map(r => `<tr class="border-t row-line">
+      <td class="py-1.5 px-2 font-semibold">${r.round}</td><td class="px-2 text-right">${money(r.bid)}</td>
+      <td class="px-2 text-right text-rose-500">${r.pay ? money(r.pay) : '-'}</td>
+      <td class="px-2 text-right text-emerald-500">${r.receive ? money(r.receive) : '-'}</td>
+      <td class="px-2 text-right font-semibold ${plClass(r.cum)}">${signed(r.cum)}</td></tr>`).join('');
+  el.innerHTML = `
+    <div class="relative overflow-hidden rounded-3xl p-5 text-white bg-linear-to-br ${good ? 'from-emerald-500 to-teal-500 shadow-emerald-500/25' : 'from-rose-500 to-orange-400 shadow-rose-500/25'} shadow-lg ${sim.dirty ? 'opacity-60' : ''}">
+      <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full bg-white/10"></div>
+      <div class="relative">
+        <div class="text-sm text-white/90">${good ? 'กำไร' : 'ขาดทุน'}รวม ${res.hands.length} มือ${sim.planName ? ' · ' + esc(sim.planName) : ''}</div>
+        <div class="text-3xl md:text-4xl font-bold mt-1"><span data-count="${res.totalNet}" data-signed="1">0</span> <span class="text-lg font-medium">บาท</span></div>
+        <div class="text-sm text-white/90 mt-1">จ่ายรวม ${money(res.totalPaid)} · รับรวม ${money(res.totalReceive)}</div>
+      </div>
+    </div>
+    <div class="grid grid-cols-2 gap-3 mt-3">${handCards}</div>
+    <div class="mt-5"><div class="text-sm font-semibold mb-2">เงินสะสมของฉันตามงวด</div><div class="h-56"><canvas id="ch-sim" aria-label="กราฟเงินสะสม"></canvas></div></div>
+    <details class="mt-4">
+      <summary class="cursor-pointer font-semibold text-sm text-violet-600 dark:text-violet-300">ดูยอดที่ต้องจ่าย/รับแต่ละงวด</summary>
+      <div class="overflow-x-auto mt-2"><table class="w-full text-sm"><thead><tr class="text-xs muted"><th class="py-2 px-2 text-left">งวด</th><th class="px-2 text-right">ดอก</th><th class="px-2 text-right">ฉันจ่าย</th><th class="px-2 text-right">ฉันรับ</th><th class="px-2 text-right">สะสม</th></tr></thead><tbody>${detail}</tbody></table></div>
+    </details>`;
+  animateCounts(el);
+  if (S.page === 'sim') drawSimChart();
+}
+
+function drawSimChart() {
+  const res = S.sim && S.sim.result;
+  if (!res || !document.getElementById('ch-sim')) return;
+  const t = chartTheme();
+  makeChart('sim', 'ch-sim', {
+    type: 'line',
+    data: {
+      labels: res.rounds.map(r => r.round),
+      datasets: [{
+        data: res.rounds.map(r => r.cum), borderColor: ACCENT, borderWidth: 3, tension: .3, pointRadius: 2,
+        fill: { target: 'origin', above: 'rgba(16,185,129,.18)', below: 'rgba(244,63,94,.16)' }
+      }]
+    },
+    options: baseOptions({
+      scales: {
+        x: { ticks: { color: t.text }, grid: { display: false }, title: { display: true, text: 'งวด', color: t.text } },
+        y: { ticks: { color: t.text, callback: v => money(v) }, grid: { color: t.grid } }
+      }
+    })
+  });
+}
+
+function setSimHands(n) {
+  const sim = S.sim;
+  if (n === sim.n) return;
+  sim.n = n;
+  while (sim.handRounds.length < n) sim.handRounds.push(null);
+  while (sim.handRounds.length > n) sim.handRounds.pop();
+  fillMissingHandRounds(sim);
+  $$('[data-sim-hands]').forEach(b => b.classList.toggle('active', +b.dataset.simHands === n));
+  renderHandRows();
+  renderSimTable();
+  markDirty();
+}
+
+/** แผนจำลองเก็บใน localStorage ของเครื่องนี้ (ไม่ส่งขึ้น server) */
+async function savePlanFlow() {
+  const sim = S.sim;
+  if (sim.dirty || !sim.result) { if (!recalc(true)) return; }
+  let mode = 'new';
+  if (sim.planId && S.me.plans.some(p => p.id === sim.planId)) {
+    const r = await Swal.fire({
+      title: 'บันทึกแผน', text: 'บันทึกทับ "' + sim.planName + '" หรือบันทึกเป็นแผนใหม่?', icon: 'question',
+      showDenyButton: true, showCancelButton: true, confirmButtonText: 'บันทึกทับ', denyButtonText: 'แผนใหม่', cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: ACCENT, denyButtonColor: '#4f7cff'
+    });
+    if (r.isDismissed) return;
+    mode = r.isConfirmed ? 'update' : 'new';
+  }
+  if (mode === 'new' && S.me.plans.length >= MAX_LOCAL_PLANS) { showError('บันทึกแผนได้สูงสุด ' + MAX_LOCAL_PLANS + ' แผน กรุณาลบแผนเก่าก่อน'); return; }
+  const nameRes = await Swal.fire({
+    title: 'ตั้งชื่อแผน', input: 'text',
+    inputValue: mode === 'update' ? sim.planName : sim.n + ' มือ · เปียงวด ' + sim.handRounds.join(', '),
+    inputAttributes: { maxlength: 60 }, showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: ACCENT, inputValidator: v => (!v || !v.trim() ? 'กรุณาตั้งชื่อแผน' : undefined)
+  });
+  if (!nameRes.isConfirmed) return;
+  const name = nameRes.value.trim().slice(0, 60);
+  const plan = {
+    id: mode === 'update' ? sim.planId : Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    name, createdAt: todayBkk(), totalNet: sim.result.totalNet,
+    data: { N: sim.N, A: sim.A, numHands: sim.n, handRounds: sim.handRounds.slice(), bids: sim.bids.slice(1), fill: sim.fill }
+  };
+  const prevPlans = S.me.plans.slice();
+  if (mode === 'update') S.me.plans = S.me.plans.map(p => (p.id === plan.id ? plan : p));
+  else S.me.plans = [plan].concat(S.me.plans);
+  if (!saveMe()) { S.me.plans = prevPlans; return; }
+  sim.planId = plan.id;
+  sim.planName = name;
+  renderSimResult();
+  renderPlans();
+  toast('success', 'บันทึกแผนในเครื่องนี้แล้ว');
+}
+
+function loadPlan(id) {
+  const p = S.me.plans.find(x => x.id === id);
+  if (!p) { showError('ไม่พบแผนนี้'); return; }
+  if (p.data && p.data.N && p.data.N !== S.data.settings.totalHands) toast('warning', 'จำนวนมือของวงเปลี่ยนไป ปรับแผนให้แล้ว');
+  S.sim = planToSim(p);
+  renderSim();
+  drawSimChart();
+  toast('success', 'เปิดแผน "' + p.name + '" แล้ว');
+}
+
+async function deletePlanFlow(id) {
+  const p = S.me.plans.find(x => x.id === id);
+  if (!p) return;
+  if (!(await confirmBox('ลบแผนนี้?', '"' + p.name + '" จะถูกลบจากเครื่องนี้', 'ลบแผน', 'warning'))) return;
+  const prevPlans = S.me.plans.slice();
+  S.me.plans = S.me.plans.filter(x => x.id !== id);
+  if (!saveMe()) { S.me.plans = prevPlans; return; }
+  if (S.sim.planId === id) { S.sim.planId = null; S.sim.planName = ''; }
+  renderPlans();
+  toast('success', 'ลบแผนแล้ว');
+}
+
+function renderPlans() {
+  const plans = S.me.plans;
+  $('#plan-list').innerHTML = plans.length ? plans.map(p => {
+    const hr = (p.data && p.data.handRounds) || [];
+    return `<div class="flex items-center gap-2 py-3 border-t row-line first:border-0">
+      <div class="flex-1 min-w-0">
+        <div class="font-medium truncate">${esc(p.name)}${S.sim.planId === p.id ? ' <span class="tag-real">กำลังเปิด</span>' : ''}</div>
+        <div class="text-xs muted">${hr.length} มือ · เปียงวด ${hr.join(', ')}</div>
+      </div>
+      <div class="font-semibold text-sm ${plClass(p.totalNet)}">${signed(p.totalNet)}</div>
+      <button type="button" class="icon-btn sm" data-plan-load="${esc(p.id)}" aria-label="เปิดแผน ${esc(p.name)}"><i class="fa-solid fa-folder-open"></i></button>
+      <button type="button" class="icon-btn sm !text-rose-500" data-plan-del="${esc(p.id)}" aria-label="ลบแผน ${esc(p.name)}"><i class="fa-solid fa-trash"></i></button>
+    </div>`;
+  }).join('') : '<div class="text-center py-6 muted text-sm"><i class="fa-regular fa-bookmark text-2xl mb-2 block"></i>ยังไม่มีแผนที่บันทึก</div>';
+
+  ['cmp-a', 'cmp-b'].forEach((id, i) => {
+    const sel = $('#' + id), cur = sel.value;
+    sel.innerHTML = `<option value="">— แผน ${i ? 'B' : 'A'} —</option>` + plans.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+    if (plans.some(p => p.id === cur)) sel.value = cur;
+  });
+  renderCompare();
+}
+
+function renderCompare() {
+  const a = $('#cmp-a').value, b = $('#cmp-b').value, el = $('#cmp-result');
+  const plans = S.me.plans;
+  if (plans.length < 2) { el.innerHTML = '<p class="text-sm muted">บันทึกอย่างน้อย 2 แผนเพื่อเปรียบเทียบ</p>'; return; }
+  if (!a || !b) { el.innerHTML = '<p class="text-sm muted">เลือก 2 แผนเพื่อเปรียบเทียบ</p>'; return; }
+  if (a === b) { el.innerHTML = '<p class="text-sm muted">เลือกแผนที่ต่างกัน</p>'; return; }
+  const pa = plans.find(p => p.id === a), pb = plans.find(p => p.id === b);
+  if (!pa || !pb) return;
+  const sa = planToSim(pa), sb = planToSim(pb);
+  const ra = sa.result, rb = sb.result;
+  const avgFuture = sim => {
+    const v = [];
+    for (let r = 1; r <= sim.N; r++) if (!isLocked(r)) v.push(sim.bids[r]);
+    return v.length ? money(Math.round(v.reduce((x, y) => x + y, 0) / v.length)) : '-';
+  };
+  const row = (label, x, y, bold) => `<tr class="border-t row-line"><td class="py-2 muted">${label}</td><td class="text-right px-2 ${bold || ''}">${x}</td><td class="text-right ${bold || ''}">${y}</td></tr>`;
+  const better = ra.totalNet === rb.totalNet ? null : (ra.totalNet > rb.totalNet ? pa : pb);
+  el.innerHTML = `<div class="overflow-x-auto"><table class="w-full text-sm">
+    <thead><tr class="text-xs muted"><th></th><th class="text-right px-2">${esc(pa.name)}</th><th class="text-right">${esc(pb.name)}</th></tr></thead>
+    <tbody>
+      ${row('จำนวนมือ', sa.n, sb.n)}
+      ${row('งวดที่เปีย', sa.handRounds.join(', '), sb.handRounds.join(', '))}
+      ${row('ดอกสมมติเฉลี่ย', avgFuture(sa), avgFuture(sb))}
+      ${row('จ่ายรวม', money(ra.totalPaid), money(rb.totalPaid))}
+      ${row('รับรวม', money(ra.totalReceive), money(rb.totalReceive))}
+      ${row('กำไร/ขาดทุนรวม', `<span class="${plClass(ra.totalNet)}">${signed(ra.totalNet)}</span>`, `<span class="${plClass(rb.totalNet)}">${signed(rb.totalNet)}</span>`, 'font-bold text-base')}
+    </tbody></table></div>
+    <div class="mt-3 rounded-2xl p-3 text-sm ${better ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-slate-100 dark:bg-white/5'}">
+      ${better ? `<i class="fa-solid fa-trophy"></i> "${esc(better.name)}" ดีกว่า ${money(Math.abs(ra.totalNet - rb.totalNet))} บาท` : 'ทั้ง 2 แผนได้ผลเท่ากัน'}
+      <div class="text-xs opacity-75 mt-1">คิดจากดอกจริงล่าสุด + ดอกสมมติในแต่ละแผน</div>
+    </div>`;
+}
+
+// ================================================================ หน้า "ของฉัน"
+function renderMe(fillInputs) {
+  if (fillInputs || !S.meFilled) {
+    $('#me-name').value = S.me.name;
+    $('#me-hands').value = S.me.hands;
+    S.meFilled = true;
+  }
+  const el = $('#me-rounds');
+  if (!S.data || !S.M) { el.innerHTML = ''; return; }
+  const list = S.M.mineList;
+  let html = list.length ? list.map((r, i) => `<div class="flex items-center gap-3 py-2 border-t row-line first:border-0">
+      <span class="chip-gold">มือ ${i + 1}</span>
+      <div class="flex-1 min-w-0"><div class="font-semibold">งวดที่ ${r.round} · ${esc(r.winner)}</div><div class="text-xs muted">${thDate(r.date, true)} · ดอก ${money(r.bid)} บาท</div></div>
+      ${mineToggleBtn(r)}
+    </div>`).join('')
+    : `<p class="text-sm muted py-2">${S.me.name ? 'ยังไม่มีงวดที่ผู้ได้ชื่อ "' + esc(S.me.name) + '"' : 'ยังไม่ได้ใส่ชื่อ'}</p>`;
+  if (S.M.extraMine > 0) html += `<p class="text-xs text-amber-600 mt-2"><i class="fa-solid fa-triangle-exclamation"></i> มีอีก ${S.M.extraMine} งวดที่ตรงกับชื่อคุณ แต่คุณตั้งไว้ว่าถือ ${S.me.hands} มือ — เพิ่มจำนวนมือถ้าถือมากกว่านี้</p>`;
+  el.innerHTML = html;
+}
+
+function saveMeFlow() {
+  const name = $('#me-name').value.replace(/\s+/g, ' ').trim().slice(0, 40);
+  const hands = Number($('#me-hands').value);
+  const form = $('#page-me');
+  if (!showErrors(form, Number.isInteger(hands) && hands >= 1 && hands <= 10 ? {} : { 'me-hands': 'ใส่ 1–10 มือ' })) return;
+  const prev = { name: S.me.name, hands: S.me.hands };
+  S.me.name = name;
+  S.me.hands = hands;
+  if (!saveMe()) { S.me.name = prev.name; S.me.hands = prev.hands; return; }
+  if (S.data && S.data.settings.configured && prev.hands !== hands) { S.M = derive(); S.sim = newSim(); }
+  refreshPersonal();
+  toast('success', 'บันทึกในเครื่องนี้แล้ว');
+}
+
+async function exportMe() {
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify({ v: 1, me: S.me }))));
+  try {
+    await navigator.clipboard.writeText(code);
+    toast('success', 'คัดลอกรหัสสำรองแล้ว เก็บไว้ในโน้ตหรือส่งให้ตัวเองในแชต');
+  } catch (e) {
+    Swal.fire({ title: 'รหัสสำรอง', html: '<p class="text-sm mb-2">กดค้างเพื่อคัดลอกข้อความด้านล่าง</p>', input: 'textarea', inputValue: code, confirmButtonColor: ACCENT, confirmButtonText: 'ปิด' });
+  }
+}
+
+async function importMe() {
+  const r = await Swal.fire({
+    title: 'นำเข้าข้อมูลส่วนตัว', input: 'textarea', inputPlaceholder: 'วางรหัสสำรองที่นี่',
+    html: '<p class="text-sm">ข้อมูลส่วนตัวในเครื่องนี้จะถูกแทนที่ด้วยข้อมูลจากรหัส</p>',
+    showCancelButton: true, confirmButtonText: 'นำเข้า', cancelButtonText: 'ยกเลิก', confirmButtonColor: ACCENT,
+    inputValidator: v => {
+      try { const o = JSON.parse(decodeURIComponent(escape(atob(String(v || '').trim())))); if (!o || !o.me) return 'รหัสไม่ถูกต้อง'; }
+      catch (e) { return 'รหัสไม่ถูกต้อง'; }
+      return undefined;
+    }
+  });
+  if (!r.isConfirmed) return;
+  const o = JSON.parse(decodeURIComponent(escape(atob(String(r.value).trim()))));
+  const prev = S.me;
+  S.me = sanitizeMe(o.me);
+  if (!saveMe()) { S.me = prev; return; }
+  if (S.data && S.data.settings.configured) { S.M = derive(); S.sim = newSim(); }
+  renderMe(true);
+  refreshPersonal();
+  toast('success', 'นำเข้าข้อมูลแล้ว');
+}
+
+async function clearMe() {
+  if (!(await confirmBox('ล้างข้อมูลส่วนตัว?', 'ชื่อ จำนวนมือ งวดที่ติ๊กเอง และแผนจำลองในเครื่องนี้จะถูกลบ', 'ล้างข้อมูล', 'warning'))) return;
+  try { localStorage.removeItem(ME_KEY); } catch (e) {}
+  S.me = defaultMe();
+  if (S.data && S.data.settings.configured) { S.M = derive(); S.sim = newSim(); }
+  renderMe(true);
+  refreshPersonal();
+  toast('success', 'ล้างข้อมูลส่วนตัวแล้ว');
+}
+
+// ================================================================ settings (ท้าวแชร์)
+function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v == null ? '' : v; }
+
+function setFreq(f) {
+  $('#set-freq').value = f;
+  $$('[data-freq]').forEach(b => b.classList.toggle('active', b.dataset.freq === f));
+  $('#day2-wrap').classList.toggle('hidden', f !== 'twice');
+}
+
+function renderSettings(force) {
+  const d = S.data;
+  if (!d) return;
+  const locked = $('#settings-locked'), body = $('#settings-body');
+  if (!S.isAdmin) {
+    locked.classList.remove('hidden');
+    body.classList.add('hidden');
+    locked.innerHTML = emptyHtml('fa-lock', 'หน้านี้สำหรับท้าวแชร์', 'ต้องใส่ PIN ก่อนจึงจะแก้ข้อมูลวงได้',
+      '<button type="button" data-action="admin" class="btn-primary mt-4"><i class="fa-solid fa-lock"></i>เข้าโหมดท้าวแชร์</button>');
+    return;
+  }
+  locked.classList.add('hidden');
+  body.classList.remove('hidden');
+  if (S.settingsDirty && !force) return;
+  const s = d.settings;
+  const r1 = d.rounds.find(r => r.round === 1);
+  setVal('set-name', s.circleName);
+  setVal('set-total', s.totalHands);
+  setVal('set-amount', s.handAmount);
+  setVal('set-minbid', s.minBid);
+  setVal('set-day1', s.day1);
+  setVal('set-day2', s.day2);
+  setVal('set-start', s.startDate || d.today);
+  setFreq(s.frequency);
+  const firstDone = !!(r1 && r1.winner);
+  $('#set-first-done').checked = firstDone;
+  syncFirstFields();
+  setVal('set-first-winner', firstDone ? r1.winner : 'ท้าวแชร์');
+  setVal('set-first-bid', firstDone ? r1.bid : 0);
+  $('#settings-welcome').classList.toggle('hidden', s.configured);
+  S.draft = d.rounds.length ? d.rounds.map(r => r.date) : generateFromForm(s.totalHands);
+  ensureDraftLength();
+  renderDraft();
+  clearErrors($('#settings-form'));
+  S.settingsDirty = false;
+}
+
+/**
+ * สร้างวันที่ N งวด: งวดแรก = start ตรง ๆ, งวดถัดไป = วันเปียที่ตั้งไว้ถัดจาก start
+ * (วันเกินเดือนใช้วันสุดท้ายของเดือน)
+ */
+function generateDates(start, freq, d1, d2, N) {
+  if (isNaN(parseYmd(start)) || !(N > 0)) return [];
+  const days = freq === 'twice' ? [d1, d2].filter(x => x >= 1 && x <= 31).sort((a, b) => a - b) : [d1];
+  if (!days.length || !(days[0] >= 1)) return [];
+  let y = +start.slice(0, 4), m = +start.slice(5, 7);
+  const out = [start];
+  for (let guard = 0; out.length < N && guard < 1300; guard++) {
+    const dim = daysInMonth(y, m);
+    days.forEach(dd => {
+      const s = ymd(y, m, Math.min(dd, dim));
+      if (s > start && out.length < N && out.indexOf(s) < 0) out.push(s);
+    });
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+function generateFromForm(N, from) {
+  return generateDates(from || $('#set-start').value, $('#set-freq').value,
+    parseInt($('#set-day1').value, 10), parseInt($('#set-day2').value, 10), N);
+}
+
+function hasRecordedRounds() {
+  return !!(S.data && S.data.rounds.some(r => r.winner));
+}
+
+/** วงยังไม่เริ่ม (ไม่มีงวดที่บันทึกผล) → เรียงวันที่ใหม่ให้ทันทีที่แก้ค่า ไม่ต้องกดปุ่ม */
+function autoRegenDates() {
+  if (hasRecordedRounds()) { renderDraft(); return; }
+  const N = parseInt($('#set-total').value, 10);
+  if (!(N >= 2 && N <= 100)) return;
+  const gen = generateFromForm(N);
+  if (gen.length) S.draft = gen;
+  renderDraft();
+}
+
+/** เลือกวันงวดแรกแล้ว ตั้ง "ทุกวันที่" ให้ตรงกับวันนั้นอัตโนมัติ (ถ้ายังไม่ตรงกับวันเปียที่ตั้งไว้) */
+function syncDaysFromStart() {
+  const t = parseYmd($('#set-start').value);
+  if (isNaN(t)) return;
+  const day = new Date(t).getUTCDate();
+  const d1 = parseInt($('#set-day1').value, 10), d2 = parseInt($('#set-day2').value, 10);
+  if ($('#set-freq').value === 'twice') {
+    if (day !== d1 && day !== d2) $('#set-day1').value = day;
+  } else {
+    $('#set-day1').value = day;
+  }
+}
+
+function renderDatePreview() {
+  const el = $('#date-preview');
+  if (!el) return;
+  $('#regen-box').classList.toggle('hidden', !hasRecordedRounds());
+  const d = S.draft;
+  if (!d.length || isNaN(parseYmd(d[0]))) { el.innerHTML = '<span class="muted">เลือกวันเปียงวดแรกก่อน</span>'; return; }
+  const c = countdown(d[0]);
+  const line = (label, s) => `<div class="flex justify-between gap-2"><span class="muted">${label}</span><b>${thDate(s, true)}</b></div>`;
+  el.innerHTML =
+    line('งวดที่ 1', d[0]) +
+    (d[1] ? line('งวดที่ 2', d[1]) : '') +
+    (d.length > 2 ? line('งวดสุดท้าย (งวดที่ ' + d.length + ')', d[d.length - 1]) : '') +
+    (daysBetween(todayBkk(), d[0]) >= 0 ? `<div class="text-xs mt-1 text-violet-600 dark:text-violet-300"><i class="fa-solid fa-hourglass-half"></i> งวดแรก${c.text === 'วันนี้!' ? 'คือวันนี้' : ' ' + c.text}</div>` : '');
+}
+
+function ensureDraftLength() {
+  const N = parseInt($('#set-total').value, 10);
+  if (!(N >= 2 && N <= 100)) return;
+  if (S.draft.length > N) S.draft = S.draft.slice(0, N);
+  if (S.draft.length < N) {
+    const lastDate = S.draft.filter(x => !isNaN(parseYmd(x))).pop();
+    const more = generateFromForm(N - S.draft.length, lastDate ? addDays(lastDate, 1) : null);
+    S.draft = S.draft.concat(more);
+    while (S.draft.length < N) S.draft.push('');
+  }
+}
+
+function draftWarnings() {
+  const w = {};
+  S.draft.forEach((x, i) => {
+    if (isNaN(parseYmd(x))) w[i] = 'ยังไม่มีวันที่';
+    else if (i > 0 && !isNaN(parseYmd(S.draft[i - 1])) && x <= S.draft[i - 1]) w[i] = x === S.draft[i - 1] ? 'ซ้ำกับงวดก่อน' : 'ก่อนงวดก่อนหน้า';
+  });
+  return w;
+}
+
+function renderDraft() {
+  renderDatePreview();
+  const w = draftWarnings();
+  const byRound = (S.M && S.M.byRound) || {};
+  const today = todayBkk();
+  $('#draft-list').innerHTML = S.draft.length ? S.draft.map((x, i) => {
+    const r = byRound[i + 1];
+    const bad = w[i];
+    const t = parseYmd(x);
+    const wd = isNaN(t) ? '' : TH_DAYS[new Date(t).getUTCDay()];
+    const tag = r && r.winner ? '<span class="tag-real">บันทึกผลแล้ว</span>' : (x && x < today ? '<span class="text-xs muted">ผ่านมาแล้ว</span>' : '');
+    return `<div class="flex items-center gap-3 py-2 border-t row-line first:border-0 ${bad ? 'bg-rose-50/70 dark:bg-rose-500/10 rounded-xl px-2 -mx-2' : ''}">
+      <span class="w-9 h-9 shrink-0 rounded-xl grid place-items-center text-sm font-bold ${TONES.violet}">${i + 1}</span>
+      <input type="date" class="field !py-2 max-w-[190px] ${bad ? 'invalid' : ''}" data-draft-idx="${i}" value="${esc(x)}" aria-label="วันที่งวด ${i + 1}">
+      <span class="text-sm muted w-8">${wd}</span>
+      <div class="flex-1 text-right">${bad ? `<span class="text-xs text-rose-500"><i class="fa-solid fa-triangle-exclamation"></i> ${bad}</span>` : tag}</div>
+    </div>`;
+  }).join('') : '<p class="text-sm muted py-4 text-center">เลือกวันเปียงวดแรกและความถี่ แล้ววันที่ทุกงวดจะขึ้นที่นี่</p>';
+  const n = Object.keys(w).length;
+  const valid = S.draft.filter(x => !isNaN(parseYmd(x)));
+  $('#draft-summary').innerHTML = S.draft.length
+    ? `รวม ${S.draft.length} งวด · ${valid.length ? thDate(valid[0]) + ' ถึง ' + thDate(valid[valid.length - 1]) : '-'}` +
+      (n ? ` · <span class="text-rose-500 font-semibold"><i class="fa-solid fa-triangle-exclamation"></i> ตรวจ ${n} งวด</span>` : ' · <span class="text-emerald-500"><i class="fa-solid fa-check"></i> วันที่เรียงถูกต้อง</span>')
+    : '';
+}
+
+/** สวิตช์ "งวดแรกเปียไปแล้ว": ปิด = ซ่อนช่องกรอก และงวดแรกยังไม่มีผู้เปีย */
+function syncFirstFields() {
+  const on = $('#set-first-done').checked;
+  $('#first-fields').classList.toggle('hidden', !on);
+  $('#first-off-hint').classList.toggle('hidden', on);
+}
+
+function readSettingsForm() {
+  const num = id => { const v = $('#' + id).value.trim(); return v === '' ? NaN : Number(v); };
+  const firstDone = $('#set-first-done').checked;
+  return {
+    circleName: $('#set-name').value.trim(),
+    totalHands: num('set-total'),
+    handAmount: num('set-amount'),
+    minBid: num('set-minbid'),
+    frequency: $('#set-freq').value,
+    day1: num('set-day1'),
+    day2: num('set-day2'),
+    startDate: $('#set-start').value,
+    firstWinner: firstDone ? $('#set-first-winner').value.trim() : '',
+    firstDone,
+    firstBid: !firstDone || $('#set-first-bid').value.trim() === '' ? 0 : Number($('#set-first-bid').value)
+  };
+}
+
+function validateSettingsForm(f) {
+  const e = {};
+  const int = v => Number.isInteger(v);
+  if (!f.circleName) e['set-name'] = 'กรุณาตั้งชื่อวง';
+  if (!int(f.totalHands) || f.totalHands < 2 || f.totalHands > 100) e['set-total'] = 'ใส่ 2–100 มือ';
+  if (!(f.handAmount > 0)) e['set-amount'] = 'กรอกเงินต่อมือ';
+  if (!(f.minBid >= 0)) e['set-minbid'] = 'ต้องเป็น 0 ขึ้นไป';
+  else if (f.handAmount > 0 && f.minBid > f.handAmount) e['set-minbid'] = 'ต้องไม่เกินเงินต่อมือ';
+  if (f.firstDone && !f.firstWinner) e['set-first-winner'] = 'กรอกชื่อผู้ได้งวดแรก (หรือปิดสวิตช์ถ้ายังไม่เปีย)';
+  else if (f.firstDone && S.draft[0] && S.draft[0] > todayBkk()) e['set-first-winner'] = 'งวดแรกยังไม่ถึงวันเปีย ปิดสวิตช์ไว้ก่อน แล้วบันทึกผลเมื่อถึงวัน';
+  if (f.firstDone && !(f.firstBid >= 0)) e['set-first-bid'] = 'ต้องเป็น 0 ขึ้นไป';
+  if (!int(f.day1) || f.day1 < 1 || f.day1 > 31) e['set-day1'] = 'วันที่ 1–31';
+  if (f.frequency === 'twice' && (!int(f.day2) || f.day2 < 1 || f.day2 > 31 || f.day2 === f.day1)) e['set-day2'] = '1–31 และไม่ซ้ำวันแรก';
+  if (isNaN(parseYmd(f.startDate))) e['set-start'] = 'เลือกวันเปียงวดแรก';
+  return e;
+}
+
+function clearErrors(root) {
+  $$('.err[data-err-for]', root).forEach(el => { el.textContent = ''; el.classList.add('hidden'); });
+  $$('.field.invalid', root).forEach(el => el.classList.remove('invalid'));
+}
+function showErrors(root, errs) {
+  clearErrors(root);
+  const ids = Object.keys(errs);
+  ids.forEach(id => {
+    const f = document.getElementById(id);
+    const m = $(`.err[data-err-for="${id}"]`, root);
+    if (f) f.classList.add('invalid');
+    if (m) { m.textContent = errs[id]; m.classList.remove('hidden'); }
+  });
+  if (ids.length) {
+    const first = document.getElementById(ids[0]);
+    if (first) { first.focus(); first.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  }
+  return ids.length === 0;
+}
+
+function genDates() {
+  const N = parseInt($('#set-total').value, 10);
+  const f = readSettingsForm();
+  const errs = validateSettingsForm(f);
+  const need = ['set-total', 'set-day1', 'set-day2', 'set-start'].filter(k => errs[k]);
+  if (need.length) { const sub = {}; need.forEach(k => { sub[k] = errs[k]; }); showErrors($('#settings-form'), sub); return; }
+  const gen = generateFromForm(N);
+  const keep = $('#keep-recorded').checked;
+  const byRound = (S.M && S.M.byRound) || {};
+  S.draft = gen.map((g, i) => { const r = byRound[i + 1]; return keep && r && r.winner && r.date ? r.date : g; });
+  S.settingsDirty = true;
+  renderDraft();
+  toast('success', 'คำนวณวันที่ ' + gen.length + ' งวดแล้ว ตรวจ/แก้ได้ก่อนบันทึก');
+}
+
+async function saveSettingsFlow() {
+  const form = $('#settings-form');
+  const f = readSettingsForm();
+  if (!showErrors(form, validateSettingsForm(f))) return;
+  ensureDraftLength();
+  if (S.draft.length !== f.totalHands || S.draft.some(x => isNaN(parseYmd(x)))) {
+    renderDraft();
+    showError('ยังมีงวดที่ไม่มีวันที่ ตรวจวันเปียงวดแรกและความถี่ หรือกรอกวันที่ในตารางให้ครบ');
+    return;
+  }
+  const w = draftWarnings();
+  if (Object.keys(w).length && !(await confirmBox('วันที่บางงวดไม่เรียงกัน', 'ตรวจพบ ' + Object.keys(w).length + ' งวดที่วันที่ซ้ำหรือย้อนกลับ ต้องการบันทึกต่อไหม?', 'บันทึกต่อ', 'warning'))) return;
+  const r1 = S.data && S.data.rounds.find(r => r.round === 1);
+  if (r1 && r1.winner && !f.firstDone &&
+    !(await confirmBox('ล้างผลงวดแรก?', 'งวดแรกบันทึกไว้ว่า "' + r1.winner + '" ปิดสวิตช์แล้วผลนี้จะถูกลบ', 'ล้างผล', 'warning'))) return;
+  const wasConfigured = S.data && S.data.settings.configured;
+  if (wasConfigured && !(await confirmBox('บันทึกการตั้งค่า?', 'สมาชิกทุกคนจะเห็นข้อมูลวงชุดใหม่นี้', 'บันทึก'))) return;
+  const btn = $('#btn-save-settings');
+  setBusy(btn, true, 'กำลังบันทึก…');
+  try {
+    const payload = {
+      circleName: f.circleName, totalHands: f.totalHands, handAmount: f.handAmount, minBid: f.minBid,
+      frequency: f.frequency, day1: f.day1, day2: f.day2, startDate: f.startDate,
+      firstWinner: f.firstWinner, firstBid: f.firstBid, dates: S.draft.slice(), rev: S.data.rev
+    };
+    let res = await rpc('saveSettings', S.token, payload);
+    if (res && res.needConfirmShrink) {
+      // ลดจำนวนมือ = ตารางงวดท้าย ๆ หายหลายงวด ต้องพิมพ์จำนวนงวดยืนยันเอง (กันกดพลาด)
+      const c = await Swal.fire({
+        icon: 'warning', title: 'ยืนยันการลดจำนวนมือ',
+        html: esc(res.message) + '<br><br>พิมพ์ตัวเลข <b>' + res.removeCount + '</b> เพื่อยืนยัน',
+        input: 'text', inputAttributes: { inputmode: 'numeric' }, showCancelButton: true,
+        confirmButtonText: 'ยืนยันลบ', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#f43f5e',
+        inputValidator: v => (String(v).trim() !== String(res.removeCount) ? 'ตัวเลขไม่ตรง' : undefined)
+      });
+      if (!c.isConfirmed) return;
+      payload.confirmShrink = res.removeCount;
+      res = await rpc('saveSettings', S.token, payload);
+    }
+    if (!handleWriteResult(res, 'บันทึกไม่สำเร็จ')) return;
+    S.settingsDirty = false;
+    renderSettings(true);
+    toast('success', 'บันทึกการตั้งค่าแล้ว');
+    if (!wasConfigured) setPage('home');
+  } catch (err) {
+    showError(err.message || String(err));
+  } finally {
+    setBusy(btn, false);
+  }
+}
+
+// ================================================================ round modal (ท้าวแชร์)
+function openModal(id) {
+  const m = document.getElementById(id);
+  clearTimeout(S.modalTimer);
+  if (m.hidden) S.lastFocus = document.activeElement;
+  m.hidden = false;
+  requestAnimationFrame(() => m.classList.add('open'));
+  setTimeout(() => {
+    const f = ['#m-winner', '#m-date'].map(s => $(s, m)).find(el => el && el.offsetParent !== null);
+    if (f) f.focus();
+  }, 60);
+}
+function closeModal() {
+  const m = $('.modal:not([hidden])');
+  if (!m) return;
+  m.classList.remove('open');
+  clearTimeout(S.modalTimer);
+  S.modalTimer = setTimeout(() => { m.hidden = true; }, 200);
+  if (S.lastFocus && S.lastFocus.focus) S.lastFocus.focus();
+}
+/** วนโฟกัสด้วยปุ่ม Tab ให้อยู่ในหน้าต่างที่เปิดอยู่ */
+function trapFocus(e) {
+  const m = $('.modal:not([hidden])');
+  if (!m) return;
+  const items = $$('button, input, select, textarea, [tabindex]:not([tabindex="-1"])', m)
+    .filter(el => !el.disabled && el.offsetParent !== null);
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+}
+function isModalOpen() { return !!$('.modal:not([hidden])'); }
+
+function openRoundModal(n) {
+  const d = S.data;
+  if (!S.isAdmin) { adminButton(); return; }
+  if (!d || !d.settings.configured) { showError('กรุณาตั้งค่าวงแชร์ก่อน'); setPage('settings'); return; }
+  const target = n || (S.M.next ? S.M.next.round : d.settings.totalHands);
+  $('#m-round').innerHTML = d.rounds.map(r => `<option value="${r.round}">งวด ${r.round} · ${thDate(r.date)}${r.winner ? ' · ' + esc(r.winner) : ''}</option>`).join('');
+  $('#m-round').value = String(target);
+  fillRoundForm(target);
+  openModal('round-modal');
+}
+
+function fillRoundForm(n) {
+  const d = S.data, s = d.settings;
+  const r = d.rounds.find(x => x.round === n);
+  if (!r) return;
+  S.modalRound = r;
+  clearErrors($('#round-form'));
+  $('#m-date').value = r.date;
+  $('#m-shift').checked = false;
+  $('#m-shift-wrap').classList.add('hidden');
+  $('#m-winner').value = r.winner || '';
+  $('#m-bid').value = r.winner ? r.bid : '';
+  $('#btn-m-clear').classList.toggle('hidden', !r.winner);
+  const pot = S.M.proj.rounds[r.round - 1] ? S.M.proj.rounds[r.round - 1].pot : 0;
+  $('#m-hint').innerHTML = `ดอกขั้นต่ำ ${money(s.minBid)} บาท · ผู้เปียงวดนี้ได้รับประมาณ ${money(pot)} บาท`;
+  updateModalMode();
+}
+
+/** เหตุที่ยังบันทึกผลงวดนี้ไม่ได้ ('' = บันทึกได้): ต้องถึงวันเปีย และงวดก่อนหน้าบันทึกครบ */
+function recordBlock(r, date) {
+  const prevMissing = S.data.rounds.find(x => x.round < r.round && !x.winner);
+  if (prevMissing) return 'ต้องบันทึกผลงวดที่ ' + prevMissing.round + ' ก่อน จึงจะบันทึกงวดนี้ได้';
+  if (!isNaN(parseYmd(date)) && date > todayBkk()) return 'ยังไม่ถึงวันเปีย (' + countdown(date).text + ') บันทึกผลได้เมื่อถึงวัน';
+  return '';
+}
+
+/** โหมดของหน้าต่าง: บันทึกผล หรือ เลื่อนวันเปียอย่างเดียว (ยังไม่ถึงวัน) */
+function updateModalMode() {
+  const r = S.modalRound;
+  if (!r) return;
+  const date = $('#m-date').value;
+  const block = recordBlock(r, date);
+  const wait = $('#m-wait');
+  const dateOnly = !!block && !r.winner;
+  $('#m-result-fields').classList.toggle('hidden', dateOnly);
+  if (dateOnly) {
+    wait.innerHTML = `<i class="fa-solid fa-hourglass-half"></i> ${esc(block)}<br><span class="text-xs opacity-80">ตอนนี้แก้/เลื่อนวันเปียของงวดนี้ได้ ถ้าเลื่อนมาเป็นวันนี้หรือก่อนหน้า จะบันทึกผลได้ทันที</span>`;
+  } else if (r.winner && !isNaN(parseYmd(date)) && date > todayBkk()) {
+    wait.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> งวดนี้บันทึกผลแล้ว จึงเลื่อนไปหลังวันนี้ไม่ได้';
+  } else {
+    wait.innerHTML = '';
+  }
+  wait.classList.toggle('hidden', !wait.innerHTML);
+  $('#round-modal-title').innerHTML = dateOnly
+    ? `<i class="fa-solid fa-calendar-days text-violet-500"></i> วันเปียงวดที่ ${r.round}`
+    : `<i class="fa-solid fa-pen-to-square text-violet-500"></i> ${r.winner ? 'แก้ไข' : 'บันทึก'}งวดที่ ${r.round}`;
+  $('#btn-m-save').innerHTML = dateOnly ? '<i class="fa-solid fa-calendar-check"></i>บันทึกวันที่' : '<i class="fa-solid fa-check"></i>บันทึก';
+}
+
+function laterRecorded(r) {
+  return S.data.rounds.find(x => x.round > r.round && x.winner) || null;
+}
+
+function onModalDateChange() {
+  const r = S.modalRound;
+  const v = $('#m-date').value;
+  const delta = r && r.date && !isNaN(parseYmd(v)) ? daysBetween(r.date, v) : 0;
+  const hasLater = r && r.round < S.data.settings.totalHands;
+  const wrap = $('#m-shift-wrap');
+  const wasHidden = wrap.classList.contains('hidden');
+  wrap.classList.toggle('hidden', !(delta && hasLater));
+  // เลื่อนงวดที่ยังไม่เปีย → ปกติงวดถัดไปก็เลื่อนตาม จึงติ๊กไว้ให้ก่อน (เอาออกได้)
+  if (wasHidden && delta && hasLater && r && !r.winner) $('#m-shift').checked = true;
+  $('#m-shift-days').textContent = delta ? '(' + (delta > 0 ? '+' : '') + delta + ' วัน)' : '';
+  updateModalMode();
+}
+
+async function saveRoundFlow(e) {
+  if (e) e.preventDefault();
+  const r = S.modalRound, s = S.data.settings, form = $('#round-form');
+  const date = $('#m-date').value;
+  const dateOnly = $('#m-result-fields').classList.contains('hidden');
+  const winner = dateOnly ? '' : $('#m-winner').value.trim();
+  const bidRaw = $('#m-bid').value.trim();
+  const errs = {};
+  if (isNaN(parseYmd(date))) errs['m-date'] = 'เลือกวันที่';
+  else if (winner) {
+    const block = recordBlock(r, date);
+    if (block) errs['m-date'] = block;
+  }
+  if (!dateOnly && !winner && r.winner && laterRecorded(r))
+    errs['m-winner'] = 'ล้างผลไม่ได้ เพราะงวดที่ ' + laterRecorded(r).round + ' บันทึกผลแล้ว';
+  let bid = null;
+  if (winner) {
+    if (bidRaw === '') errs['m-bid'] = 'กรอกดอก (ใส่ 0 ได้)';
+    else { bid = Number(bidRaw); if (!isFinite(bid) || bid < 0) errs['m-bid'] = 'ดอกต้องเป็น 0 ขึ้นไป'; }
+  }
+  if (!showErrors(form, errs)) return;
+  if (!winner && r.winner && !(await confirmBox('ล้างผลงวดนี้?', 'ชื่อผู้เปียและดอกของงวดที่ ' + r.round + ' จะถูกลบ', 'ล้างผล', 'warning'))) return;
+  if (winner && bid < s.minBid && r.round !== 1 && r.round !== s.totalHands &&
+    !(await confirmBox('ดอกต่ำกว่าขั้นต่ำ', 'ขั้นต่ำของวงคือ ' + money(s.minBid) + ' บาท ยืนยันบันทึก ' + money(bid) + ' บาท?', 'ยืนยัน', 'warning'))) return;
+  await submitRound({ round: r.round, date, winner, bid, shiftNext: !$('#m-shift-wrap').classList.contains('hidden') && $('#m-shift').checked },
+    $('#btn-m-save'), winner ? 'บันทึกงวดที่ ' + r.round + ' แล้ว' : 'บันทึกวันที่แล้ว');
+}
+
+async function clearRoundFlow() {
+  const r = S.modalRound;
+  if (!r || !r.winner) return;
+  const later = laterRecorded(r);
+  if (later) { showError('ล้างผลงวดนี้ไม่ได้ เพราะงวดที่ ' + later.round + ' บันทึกผลแล้ว ต้องล้างงวดหลังก่อน'); return; }
+  if (!(await confirmBox('ล้างผลงวดนี้?', 'ชื่อผู้เปียและดอกของงวดที่ ' + r.round + ' จะถูกลบ (วันที่ยังอยู่)', 'ล้างผล', 'warning'))) return;
+  await submitRound({ round: r.round, date: r.date, winner: '', bid: null, shiftNext: false }, $('#btn-m-clear'), 'ล้างผลงวดที่ ' + r.round + ' แล้ว');
+}
+
+async function submitRound(payload, btn, okText) {
+  if (S.saving) return;
+  S.saving = true;
+  setBusy(btn, true, 'กำลังบันทึก…');
+  try {
+    payload.rev = S.data.rev;
+    const res = await rpc('saveRound', S.token, payload);
+    const ok = handleWriteResult(res, 'บันทึกไม่สำเร็จ');
+    closeModal();
+    if (ok) toast('success', okText);
+  } catch (err) {
+    showError(err.message || String(err));
+  } finally {
+    S.saving = false;
+    setBusy(btn, false);
+  }
+}
+
+// ================================================================ theme & realtime-ish tick
+function toggleTheme() {
+  const dark = !isDark();
+  document.documentElement.classList.toggle('dark', dark);
+  try { localStorage.setItem('share-book-theme', dark ? 'dark' : 'light'); } catch (e) {}
+  renderHeader();
+  if (S.data && S.data.settings.configured) {
+    if (S.page === 'stats') renderStats();
+    if (S.page === 'sim') drawSimChart();
+  }
+}
+
+function tick() {
+  if (!S.data) return;
+  if (todayBkk() !== S.lastToday) {
+    S.lastToday = todayBkk();
+    S.M = derive();
+    renderHeader(); renderHome(); renderTimeline();
+    return;
+  }
+  $$('[data-countdown]').forEach(el => { el.textContent = countdown(el.dataset.countdown).text; });
+}
+
+// ================================================================ events
+document.addEventListener('click', e => {
+  const t = e.target;
+  const nav = t.closest('[data-nav]');
+  if (nav) { e.preventDefault(); if (isModalOpen()) closeModal(); setPage(nav.dataset.nav); return; }
+  const act = t.closest('[data-action]');
+  if (act) {
+    const a = act.dataset.action;
+    if (a === 'record') openRoundModal();
+    else if (a === 'reload') load();
+    else if (a === 'explain') explainProjection();
+    else if (a === 'admin') adminButton();
+    return;
+  }
+  if (t.closest('[data-close-modal]')) { closeModal(); return; }
+  const mt = t.closest('[data-mine-toggle]');
+  if (mt) { toggleMine(+mt.dataset.mineToggle); return; }
+  const ed = t.closest('[data-edit-round]');
+  if (ed) { openRoundModal(+ed.dataset.editRound); return; }
+  const tv = t.closest('[data-tl-view]');
+  if (tv) { S.tlView = tv.dataset.tlView; renderTimeline(); return; }
+  const tf = t.closest('[data-tl-filter]');
+  if (tf) { S.tlFilter = tf.dataset.tlFilter; renderTimeline(); return; }
+  const sh = t.closest('[data-sim-hands]');
+  if (sh) { setSimHands(+sh.dataset.simHands); return; }
+  const fq = t.closest('[data-freq]');
+  if (fq) { setFreq(fq.dataset.freq); S.settingsDirty = true; autoRegenDates(); return; }
+  const pl = t.closest('[data-plan-load]');
+  if (pl) { loadPlan(pl.dataset.planLoad); return; }
+  const pd = t.closest('[data-plan-del]');
+  if (pd) { deletePlanFlow(pd.dataset.planDel); return; }
+  const bq = t.closest('[data-bid-quick]');
+  if (bq) {
+    const inp = $('#m-bid'), s = S.data.settings, q = bq.dataset.bidQuick;
+    const cur = parseFloat(inp.value);
+    inp.value = q === 'min' ? s.minBid : Math.max(0, (isFinite(cur) ? cur : s.minBid) + Number(q));
+  }
+});
+
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.matches('[data-bid-round]')) {
+    const r = +t.dataset.bidRound, v = parseFloat(t.value);
+    S.sim.bids[r] = isFinite(v) && v >= 0 ? v : NaN;
+    t.classList.toggle('warn', !(v >= S.data.settings.minBid) && r !== 1 && r !== S.sim.N);
+    markDirty();
+    return;
+  }
+  if (t.closest('#settings-form')) {
+    S.settingsDirty = true;
+    if (t.id === 'set-start') { syncDaysFromStart(); autoRegenDates(); }
+    if (t.id === 'set-day1' || t.id === 'set-day2') autoRegenDates();
+    if (t.id === 'set-total') { if (hasRecordedRounds()) { ensureDraftLength(); renderDraft(); } else autoRegenDates(); }
+    if (t.id === 'set-first-done') syncFirstFields();
+    return;
+  }
+  if (['fill-min', 'fill-max', 'fill-step'].indexOf(t.id) >= 0) renderFillLevels();
+  if (t.id === 'm-date') onModalDateChange();
+});
+
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.matches('[data-hand-idx]')) {
+    S.sim.handRounds[+t.dataset.handIdx] = t.value ? +t.value : null;
+    renderHandRows();
+    renderSimTable();
+    markDirty();
+    return;
+  }
+  if (t.matches('[data-draft-idx]')) {
+    S.draft[+t.dataset.draftIdx] = t.value;
+    S.settingsDirty = true;
+    renderDraft();
+    return;
+  }
+  if (t.id === 'set-first-done') syncFirstFields();
+  if (t.id === 'fill-pattern') renderFillLevels();
+  if (t.id === 'cmp-a' || t.id === 'cmp-b') renderCompare();
+  if (t.id === 'm-round') fillRoundForm(+t.value);
+  if (t.id === 'm-date') onModalDateChange();
+});
+
+document.addEventListener('keydown', e => {
+  if (!isModalOpen() || (window.Swal && Swal.isVisible())) return;
+  if (e.key === 'Escape') closeModal();
+  else if (e.key === 'Tab') trapFocus(e);
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && S.data && Date.now() - S.lastLoad > 60000 && !isModalOpen()) load(true);
+});
+
+// ข้อมูลส่วนตัวถูกแก้จากอีกแท็บ → อ่านใหม่
+window.addEventListener('storage', ev => {
+  if (ev.key === ME_KEY) { S.me = loadMe(); refreshPersonal(); renderMe(true); }
+});
+
+window.addEventListener('error', ev => { console.error('[client error]', ev.message, ev.filename, ev.lineno); });
+
+function init() {
+  if (window.Chart) Chart.defaults.font.family = "'IBM Plex Sans Thai', sans-serif";
+  S.me = loadMe();
+  try { S.token = localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { S.token = ''; }
+  $('#btn-theme').addEventListener('click', toggleTheme);
+  $('#btn-refresh').addEventListener('click', () => load());
+  $('#btn-admin').addEventListener('click', adminButton);
+  $('#btn-gen-dates').addEventListener('click', genDates);
+  $('#btn-save-settings').addEventListener('click', saveSettingsFlow);
+  $('#settings-form').addEventListener('submit', ev => { ev.preventDefault(); saveSettingsFlow(); });
+  $('#btn-autofill').addEventListener('click', autoFill);
+  $('#btn-recalc').addEventListener('click', () => recalc(false));
+  $('#btn-save-plan').addEventListener('click', savePlanFlow);
+  $('#btn-new-sim').addEventListener('click', async () => {
+    if (!(await confirmBox('เริ่มจำลองใหม่?', 'ดอกสมมติและงวดที่เลือกไว้จะกลับเป็นค่าเริ่มต้น', 'เริ่มใหม่'))) return;
+    S.sim = newSim();
+    renderSim();
+    drawSimChart();
+  });
+  $('#btn-save-me').addEventListener('click', saveMeFlow);
+  $('#btn-export-me').addEventListener('click', exportMe);
+  $('#btn-import-me').addEventListener('click', importMe);
+  $('#btn-clear-me').addEventListener('click', clearMe);
+  $('#round-form').addEventListener('submit', saveRoundFlow);
+  $('#btn-m-clear').addEventListener('click', clearRoundFlow);
+  applyRole();
+  renderHeader();
+  setPage('home');
+  load();
+  setInterval(tick, 30000);
+}
+
+init();
+</script>
+
+</body>
+</html>
