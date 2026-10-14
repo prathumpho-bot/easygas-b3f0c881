@@ -181,6 +181,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
+  /* ส่วนประกอบรูปแบบหน้าจอที่ Index.html เรียกใช้ */
   :root {
     --accent: #6d5dfc;
     --accent-2: #4f7cff;
@@ -461,6 +462,13 @@
     </header>
 
     <main class="max-w-6xl mx-auto px-4 md:px-8 pt-2 pb-32 md:pb-12">
+      <div class="card p-4 mb-4 space-y-3">
+        <div class="flex gap-2 items-center"><label for="circle-select" class="sr-only">เลือกวงแชร์</label><select id="circle-select" class="field flex-1" disabled><option>กำลังโหลดวงแชร์…</option></select><button id="btn-add-circle" type="button" data-admin-only class="btn-primary shrink-0" disabled><i class="fa-solid fa-plus"></i>เพิ่มวง</button></div>
+        <p class="text-xs muted">สมุดบันทึกของคุณ · เป็นลูกแชร์ก็ดูแลข้อมูลได้ด้วย PIN · ผู้มีลิงก์ดูข้อมูลทุกวงได้ อย่าบันทึกข้อมูลลับ</p>
+        <div class="flex gap-2 flex-wrap"><button type="button" data-nav="members" class="chip"><i class="fa-solid fa-users"></i> สมาชิกทุกคน</button><button type="button" data-nav="payments" class="chip"><i class="fa-solid fa-wallet"></i> การจ่าย</button><button type="button" data-nav="settings" data-admin-only class="chip"><i class="fa-solid fa-gear"></i> ตั้งค่าวงนี้</button></div>
+      </div>
+      <section data-page="members" id="page-members" hidden></section>
+      <section data-page="payments" id="page-payments" hidden></section>
 
       <!-- HOME -->
       <section data-page="home" id="page-home" aria-live="polite">
@@ -743,6 +751,8 @@
         <div id="m-wait" class="hidden rounded-2xl p-4 text-sm bg-blue-50 text-blue-800 dark:bg-blue-500/10 dark:text-blue-200 leading-relaxed"></div>
         <div id="m-result-fields" class="space-y-4">
           <div>
+            <label class="label" for="m-hand">เลือกสมาชิกและมือที่เปีย</label>
+            <select id="m-hand" class="field mb-3"><option value="">เลือกมือสมาชิก</option></select>
             <label class="label" for="m-winner">ชื่อผู้ได้ (ผู้เปีย)</label>
             <input id="m-winner" class="field" maxlength="40" list="names-list" placeholder="เช่น พี่เอ">
             <div class="err hidden" data-err-for="m-winner"></div>
@@ -772,11 +782,12 @@
   </div>
   <datalist id="names-list"></datalist>
 
+  <!-- โหลดส่วนประกอบหลังสร้างหน้าจอครบ โดยให้สคริปต์หลักมาก่อนระบบหลายวง -->
   <script>
 'use strict';
 
 // ================================================================ state & constants
-const ME_KEY = 'share-book-me-v1';          // ข้อมูลส่วนตัว (ชื่อ, จำนวนมือ, แผนจำลอง) — อยู่ในเครื่องนี้เท่านั้น
+let ME_KEY = 'share-book-me-v1';          // ข้อมูลส่วนตัว (ชื่อ, จำนวนมือ, แผนจำลอง) — อยู่ในเครื่องนี้เท่านั้น
 const TOKEN_KEY = 'share-book-admin-token'; // token โหมดท้าวแชร์ (ไม่ใช่ PIN)
 const MAX_LOCAL_PLANS = 30;
 
@@ -801,7 +812,7 @@ const S = {
   modalTimer: null,
   lastFocus: null
 };
-const PAGE_TITLES = { home: 'หน้าแรก', timeline: 'ไทม์ไลน์', stats: 'สถิติ', sim: 'จำลองกำไร/ขาดทุน', me: 'ของฉัน', settings: 'ตั้งค่าวงแชร์' };
+const PAGE_TITLES = { members: 'สมาชิกทุกคน', payments: 'การจ่ายรายมือ', home: 'หน้าแรก', timeline: 'ไทม์ไลน์', stats: 'สถิติ', sim: 'จำลองกำไร/ขาดทุน', me: 'ของฉัน', settings: 'ตั้งค่าวงแชร์' };
 const TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const TH_DAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
 const ACCENT = '#6d5dfc';
@@ -963,8 +974,13 @@ function handleWriteResult(res, fallbackMsg) {
     return false;
   }
   if (!res || !res.ok) throw new Error((res && res.message) || fallbackMsg);
-  if (res.needReload) load(true);
-  else applyBundle(res);
+  try {
+    if (res.needReload) load(true);
+    else applyBundle(res);
+  } catch (renderError) {
+    console.error('บันทึกแล้ว แต่แสดงผลไม่สำเร็จ', renderError);
+    toast('warning', 'บันทึกแล้ว แต่หน้าจออัปเดตไม่สำเร็จ กดโหลดใหม่ อย่าบันทึกซ้ำ');
+  }
   return true;
 }
 
@@ -974,7 +990,7 @@ async function load(silent) {
   const rb = $('#btn-refresh');
   if (rb) rb.querySelector('i').classList.add('fa-spin');
   try {
-    const res = await rpcRead('getBundle', S.token || '');
+    const res = await rpcRead('getBundle', S.token || '', S.circleId || 'legacy');
     if (!res || !res.ok) throw new Error((res && res.message) || 'โหลดข้อมูลไม่สำเร็จ');
     if (S.token && !res.isAdmin) { setToken(''); if (!silent) toast('info', 'สิทธิ์ท้าวแชร์หมดอายุ ใส่ PIN ใหม่ได้ที่ปุ่มกุญแจ'); }
     applyBundle(res);
@@ -985,10 +1001,13 @@ async function load(silent) {
   } finally {
     S.loading = false;
     if (rb) rb.querySelector('i').classList.remove('fa-spin');
+    const circleSelect = $('#circle-select');
+    if (circleSelect) circleSelect.disabled = !S.data || S.saving;
   }
 }
 
 function applyBundle(res) {
+  if (res.circleId) S.circleId = res.circleId;
   const prev = S.data && S.data.settings;
   S.data = res;
   S.isAdmin = !!res.isAdmin;
@@ -1234,6 +1253,7 @@ function renderAll() {
   renderMe();
   renderSettings();
   renderNames();
+  if (typeof renderMulti === 'function') renderMulti();
 }
 
 function renderHeader() {
@@ -1266,6 +1286,7 @@ function setPage(p) {
     if (p === 'sim' && S.sim) drawSimChart();
     if (p === 'me') renderMe(true);
     if (p === 'settings') renderSettings();
+    if (typeof renderMulti === 'function') renderMulti();
   }
 }
 
@@ -2491,7 +2512,7 @@ async function saveSettingsFlow() {
     const payload = {
       circleName: f.circleName, totalHands: f.totalHands, handAmount: f.handAmount, minBid: f.minBid,
       frequency: f.frequency, day1: f.day1, day2: f.day2, startDate: f.startDate,
-      firstWinner: f.firstWinner, firstBid: f.firstBid, dates: S.draft.slice(), rev: S.data.rev
+      circleId: S.circleId || 'legacy', firstWinner: f.firstWinner, firstBid: f.firstBid, dates: S.draft.slice(), rev: S.data.rev
     };
     let res = await rpc('saveSettings', S.token, payload);
     if (res && res.needConfirmShrink) {
@@ -2577,6 +2598,7 @@ function fillRoundForm(n) {
   $('#btn-m-clear').classList.toggle('hidden', !r.winner);
   const pot = S.M.proj.rounds[r.round - 1] ? S.M.proj.rounds[r.round - 1].pot : 0;
   $('#m-hint').innerHTML = `ดอกขั้นต่ำ ${money(s.minBid)} บาท · ผู้เปียงวดนี้ได้รับประมาณ ${money(pot)} บาท`;
+  if (typeof fillHandSelect === 'function') fillHandSelect(r);
   updateModalMode();
 }
 
@@ -2672,6 +2694,8 @@ async function submitRound(payload, btn, okText) {
   setBusy(btn, true, 'กำลังบันทึก…');
   try {
     payload.rev = S.data.rev;
+    payload.circleId = S.circleId || 'legacy';
+    payload.handId = payload.winner ? ($('#m-hand').value || '') : '';
     const res = await rpc('saveRound', S.token, payload);
     const ok = handleWriteResult(res, 'บันทึกไม่สำเร็จ');
     closeModal();
@@ -2841,5 +2865,120 @@ function init() {
 init();
 </script>
 
+  <script>
+'use strict';
+// ส่วนประกอบหลายวง โหลดหลัง JavaScript.html เพื่อใช้สถานะและตัวช่วยร่วมกัน
+function multiError(e){showError(e.message||String(e));}
+function multiLocalKey(id){return id==='legacy'?'share-book-me-v1':'share-book-me-v1-'+id;}
+function renderMulti(){
+ if(!S.data)return;
+ const d=S.data;
+ const sel=$('#circle-select');
+ sel.innerHTML=(d.circles||[]).map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
+ sel.value=d.circleId||'legacy';sel.disabled=S.loading||S.saving;
+ $('#btn-add-circle').disabled=S.saving;
+ $('#side-role').textContent=S.isAdmin?'ผู้ดูแลสมุด · เป็นลูกแชร์ก็ตั้งค่าได้':'ผู้ดูข้อมูล · เข้าโหมดผู้ดูแลด้วย PIN';
+ $('#btn-admin').setAttribute('aria-label','ผู้ดูแลสมุด');
+ const members=d.members||[],totals=(d.ledger&&d.ledger.totals)||[];
+ $('#page-members').innerHTML=`<div class="card p-5 mb-4"><h2 class="font-bold text-lg"><i class="fa-solid fa-users text-violet-500"></i> สมาชิก ${members.length} คน · ${members.reduce((a,m)=>a+m.hands,0)}/${d.settings.totalHands} มือ</h2><p class="text-sm muted mt-2">เพิ่มสมาชิกเองเพื่อแยกคนชื่อซ้ำ ประวัติเก่ายังคงชื่อเดิมไว้ กรุณาเปิดแก้ไขงวดแล้วเลือกมือเพื่อเชื่อมทะเบียน</p>${S.isAdmin?'<button type="button" id="add-member" class="btn-primary mt-3"><i class="fa-solid fa-plus"></i>เพิ่มสมาชิก</button>':''}</div>`+
+ (members.length?`<div class="grid md:grid-cols-2 gap-4">${members.map(m=>{
+ const t=totals.find(x=>x.memberId===m.id)||{};
+ return `<div class="card p-5"><div class="flex gap-2 items-center"><h3 class="font-bold flex-1">${esc(m.name)} · ${m.hands} มือ</h3>${S.isAdmin?`<button type="button" class="icon-btn" data-member-edit="${esc(m.id)}" aria-label="แก้ไขสมาชิก"><i class="fa-solid fa-pen"></i></button><button type="button" class="icon-btn text-rose-500" data-member-delete="${esc(m.id)}" aria-label="ลบสมาชิก"><i class="fa-solid fa-trash"></i></button>`:''}</div><p class="text-sm muted mt-2">${esc(m.note)}</p><div class="grid grid-cols-2 gap-3 mt-3 text-sm"><div>ต้องจ่ายถึงวันนี้<b class="block">${money(t.due)}</b></div><div>บันทึกจ่ายแล้ว<b class="block">${money(t.paid)}</b></div><div>ยอดรับตามผลเปีย<b class="block text-emerald-500">${money(t.receive)}</b></div><div>สุทธิรับ − จ่ายจริง<b class="block">${signed(t.balance)}</b></div></div><p class="text-xs muted mt-3">ค้างรวม ${money(t.outstanding)} บาท · ยอดรับเป็นยอดตามกติกา ไม่ใช่หลักฐานรับเงินจริง</p><button type="button" class="btn-ghost w-full mt-3" data-member-me="${esc(m.id)}"><i class="fa-solid fa-user"></i>ฉันคือคนนี้</button></div>`;
+ }).join('')}</div>`:emptyHtml('fa-users','ยังไม่มีสมาชิก','เพิ่มทะเบียนสมาชิกเพื่อบันทึกข้อมูลทุกคน'));
+ renderPaymentList();
+}
+function renderPaymentList(){
+ if(!S.data)return;
+ const d=S.data,el=$('#page-payments');
+ const n=S.paymentRound||((S.M.next&&S.M.next.round)||1);
+ S.paymentRound=Math.min(n,d.settings.totalHands);
+ const rows=((d.ledger&&d.ledger.rows)||[]).filter(r=>r.round===S.paymentRound);
+ el.innerHTML=`<div class="card p-5 mb-4"><label for="pay-round" class="label">เลือกงวด</label><select id="pay-round" class="field">${d.rounds.map(r=>`<option value="${r.round}" ${r.round===S.paymentRound?'selected':''}>งวด ${r.round} · ${thDate(r.date)}</option>`).join('')}</select><p class="text-xs muted mt-3">ยอดต้องจ่ายคำนวณจากผลเปียล่าสุด · ถ้าแก้ผลเปีย ให้ตรวจการจ่ายใหม่ · สมาชิกที่ยังไม่ได้ลงทะเบียนไม่อยู่ในรายการนี้</p></div>`+
+ (rows.length?`<div class="space-y-3">${rows.map(r=>`<div class="card p-4"><div class="flex items-center gap-3"><div class="flex-1"><b>${esc(r.name)} · มือ ${r.index}</b><p class="text-sm muted">ต้องจ่าย ${money(r.due)} · จ่าย ${money(r.paid)} · ${r.status}</p><p class="text-xs muted">${esc(r.date)} ${esc(r.note)}</p></div>${S.isAdmin?`<button type="button" data-payment="${esc(r.handId)}" class="btn-primary"><i class="fa-solid fa-pen"></i>จ่าย</button>`:''}</div></div>`).join('')}</div>`:emptyHtml('fa-wallet','ยังไม่มีข้อมูล','เพิ่มสมาชิกก่อนบันทึกการจ่าย'));
+}
+function fillHandSelect(r){
+ const used=new Set(S.data.rounds.filter(x=>x.round!==r.round&&x.winner&&x.handId).map(x=>x.handId));
+ $('#m-hand').innerHTML='<option value="">ประวัติเก่า / ยังไม่เลือกมือ</option>'+(S.data.hands||[]).filter(h=>!used.has(h.id)).map(h=>`<option value="${esc(h.id)}">${esc(h.name)} · มือ ${h.index}</option>`).join('');
+ $('#m-hand').value=r.handId||'';
+ $('#m-winner').readOnly=!!r.handId;
+}
+async function multiWrite(name,p){
+ if(S.saving) return false;
+ S.saving=true;
+ const buttons=$$('button');const states=buttons.map(b=>b.disabled);buttons.forEach(b=>{b.disabled=true;});
+ try {
+  p.circleId=S.circleId||'legacy';p.rev=S.data.rev;
+  const res=await rpc(name,S.token,p);
+  const ok=handleWriteResult(res,'บันทึกไม่สำเร็จ');
+  if(ok)toast('success',res.message||'บันทึกแล้ว');
+  return ok;
+ }catch(e){multiError(e);return false;}
+ finally{S.saving=false;buttons.forEach((b,i)=>{if(b.isConnected)b.disabled=states[i];});$('#btn-add-circle').disabled=false;$('#circle-select').disabled=false;}
+}
+async function switchCircle(id){
+ if(S.loading||S.saving)return;
+ if(S.settingsDirty&&!(await confirmBox('สลับวงแชร์?','ค่าที่แก้แต่ยังไม่บันทึกจะหาย','สลับวง'))) {$('#circle-select').value=S.circleId;return;}
+ S.circleId=id;ME_KEY=multiLocalKey(id);S.me=loadMe();S.meFilled=false;S.sim=null;S.settingsDirty=false;S.paymentRound=1;
+ try{localStorage.setItem('share-book-selected-circle',id);}catch(e){}
+ await load(false);
+ $('#circle-select').disabled=false;
+ renderMe(true);
+}
+async function addCircleFlow(){
+ if(!S.isAdmin)return adminButton();
+ const r=await Swal.fire({title:'เพิ่มวงแชร์',input:'text',inputLabel:'ชื่อวง',inputAttributes:{maxlength:60},showCancelButton:true,confirmButtonText:'เพิ่มวง',cancelButtonText:'ยกเลิก',confirmButtonColor:ACCENT,inputValidator:v=>v.trim()?undefined:'กรุณาตั้งชื่อวง',showLoaderOnConfirm:true,allowOutsideClick:()=>!Swal.isLoading(),preConfirm:async name=>{
+  try{const b=await rpc('createCircle',S.token,{name:name.trim()});if(!b||!b.ok){Swal.showValidationMessage(b&&b.message||'เพิ่มวงไม่สำเร็จ');return false;}return b;}catch(e){Swal.showValidationMessage(e.message);return false;}
+ }});
+ if(!r.isConfirmed)return;
+ const b=r.value;
+ S.circleId=b.circleId;ME_KEY=multiLocalKey(b.circleId);S.me=loadMe();S.sim=null;S.meFilled=false;S.settingsDirty=false;
+ toast('success','เพิ่มวงแล้ว');
+ try{if(b.needReload)await load(false);else applyBundle(b);setPage('settings');}catch(e){toast('warning','เพิ่มวงแล้ว แต่โหลดหน้าจอไม่สำเร็จ กดโหลดใหม่');}
+}
+async function memberFlow(id){
+ const old=(S.data.members||[]).find(m=>m.id===id)||{id:'',name:'',hands:1,note:''};
+ const r=await Swal.fire({title:id?'แก้ไขสมาชิก':'เพิ่มสมาชิก',html:`<div class="text-left"><label for="member-name" class="label">ชื่อสมาชิก</label><input id="member-name" class="field" maxlength="40" value="${esc(old.name)}"><label for="member-hands" class="label mt-3">จำนวนมือ</label><input id="member-hands" type="number" min="1" max="100" class="field" value="${old.hands}"><label for="member-note" class="label mt-3">หมายเหตุ (ผู้มีลิงก์อ่านได้)</label><input id="member-note" class="field" maxlength="200" value="${esc(old.note)}"><p id="member-error" class="err" role="alert"></p></div>`,showCancelButton:true,confirmButtonText:'บันทึก',cancelButtonText:'ยกเลิก',confirmButtonColor:ACCENT,preConfirm:()=>{
+  const name=$('#member-name').value.trim(),hands=Number($('#member-hands').value),note=$('#member-note').value;
+  const field=!name?'member-name':!Number.isInteger(hands)||hands<1||hands>100?'member-hands':'';
+  if(field){$('#member-error').textContent=field==='member-name'?'กรุณากรอกชื่อ':'จำนวนมือ 1–100';$('#'+field).focus();return false;}
+  return {id:old.id,name,hands,note};
+ }});
+ if(r.isConfirmed)await multiWrite('saveMember',r.value);
+}
+async function paymentFlow(handId){
+ const row=S.data.ledger.rows.find(r=>r.round===S.paymentRound&&r.handId===handId);if(!row)return;
+ const r=await Swal.fire({title:row.name+' · มือ '+row.index,html:`<div class="text-left"><p class="muted mb-3">งวด ${row.round} ต้องจ่าย ${money(row.due)} บาท</p><label for="paid-value" class="label">ยอดจ่ายรวมของงวดนี้ (บันทึกทับยอดเดิม)</label><input id="paid-value" type="number" min="0" step="0.01" class="field" value="${row.paid}"><label for="paid-date" class="label mt-3">วันที่จ่าย</label><input id="paid-date" type="date" class="field" value="${esc(row.date||todayBkk())}"><label for="paid-note" class="label mt-3">หมายเหตุ</label><input id="paid-note" maxlength="200" class="field" value="${esc(row.note)}"><p id="paid-error" class="err" role="alert"></p></div>`,showCancelButton:true,confirmButtonText:'บันทึก',cancelButtonText:'ยกเลิก',confirmButtonColor:ACCENT,preConfirm:()=>{
+ const raw=$('#paid-value').value,paid=Number(raw),date=$('#paid-date').value;
+ let field='';if(raw===''||!Number.isFinite(paid)||paid<0||paid>100000000)field='paid-value';else if(paid>0&&isNaN(parseYmd(date)))field='paid-date';
+ if(field){$('#paid-error').textContent='ตรวจยอดจ่ายและวันที่อีกครั้ง';$('#'+field).focus();return false;}
+ return {round:row.round,handId,paid,date,note:$('#paid-note').value};
+ }});
+ if(r.isConfirmed)await multiWrite('savePayment',r.value);
+}
+document.addEventListener('click',async e=>{
+ const t=e.target.closest('button');if(!t)return;
+ try{
+  if(t.id==='btn-add-circle')await addCircleFlow();
+  if(t.id==='add-member')await memberFlow('');
+  if(t.dataset.memberEdit)await memberFlow(t.dataset.memberEdit);
+  if(t.dataset.memberDelete&&await confirmBox('ลบสมาชิก?','ลบได้เฉพาะสมาชิกที่ยังไม่มีประวัติเปียและการจ่าย','ลบ','warning'))await multiWrite('deleteMember',{id:t.dataset.memberDelete});
+  if(t.dataset.payment)await paymentFlow(t.dataset.payment);
+  if(t.dataset.memberMe){const m=S.data.members.find(x=>x.id===t.dataset.memberMe);if(m){const previous=S.me;S.me=Object.assign({},S.me,{name:m.name,hands:Math.min(10,m.hands),memberId:m.id});if(saveMe()){S.sim=null;refreshPersonal();renderMe(true);setPage('home');toast('success','เลือกตัวคุณในวงนี้แล้ว');}else S.me=previous;}}
+ }catch(error){multiError(error);}
+});
+document.addEventListener('change',async e=>{
+ try{
+  if(e.target.id==='circle-select')await switchCircle(e.target.value);
+  if(e.target.id==='pay-round'){S.paymentRound=Number(e.target.value);renderPaymentList();}
+  if(e.target.id==='m-hand'){const h=(S.data.hands||[]).find(x=>x.id===e.target.value);$('#m-winner').readOnly=!!h;if(h)$('#m-winner').value=h.name;}
+ }catch(error){multiError(error);}
+});
+// เปลี่ยนข้อความบทบาทบนหน้าจอเท่านั้น ไม่เปลี่ยนชื่อผู้เปียในข้อมูล
+function updateKeeperLabels(){
+ const ids=['btn-admin','page-settings'];
+ ids.forEach(id=>{const root=document.getElementById(id);if(!root)return;const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode())){if(node.nodeValue.indexOf('สำหรับท้าวแชร์')>=0)node.nodeValue=node.nodeValue.replace('สำหรับท้าวแชร์','สำหรับผู้ดูแลสมุด');}});
+}
+setInterval(updateKeeperLabels,1000);
+</script>
 </body>
 </html>
